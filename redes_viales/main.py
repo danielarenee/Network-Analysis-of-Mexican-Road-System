@@ -3,12 +3,15 @@ import pandas as pd
 import osmnx as ox
 import networkx as nx
 import matplotlib.pyplot as plt
+import shapely as shp
+from networkx.classes import neighbors
+
 import src.func as fc
 import numpy as np
 
 from shapely.geometry import Point
 from scipy.spatial import Delaunay
-from collections import deque
+
 
 #%%
 
@@ -196,35 +199,11 @@ plt.gca().set_aspect('equal', 'box')
 plt.show()
 
 #%%
-# ------- UPDATE --------
-
 # hacer función para ir eliminando iterativamente los vértices de grado 1
 
-def podar_grafo(graph, min_degree=1):
 
-    H = graph.copy()
-    Hu = H.to_undirected(as_view=True) # vista de H
 
-    leaf_nodes = [n for n, d in Hu.degree() if d <= min_degree]
-    queue = deque(leaf_nodes) # nodos por eliminar
-    in_queue = set(queue) # para evitar duplicados
-    removed_nodes = [] # output
-
-    # loop para podar
-    while queue:
-        u = queue.popleft()
-        if Hu.degree(u) <= min_degree:
-            neighbors = list(Hu.neighbors(u))
-            H.remove_node(u)
-            removed_nodes.append(u)
-            for v in neighbors: #
-                if v in H and Hu.degree(v) <= min_degree and v not in in_queue:
-                    queue.append(v) # para que entre en el while
-                    in_queue.add(v) # para no repetir
-
-    return H, removed_nodes
-
-grafo_podado, removed_nodes = podar_grafo(graph)
+grafo_podado, removed_nodes = fc.podar_grado_1(graph)
 
 fig, ax = ox.plot_graph(grafo_podado, show=False, close=False)
 fig.patch.set_facecolor('black')  # fondo fuera del gráfico
@@ -233,3 +212,20 @@ gdf_poly.boundary.plot(ax=ax, color="red")
 gdf_union.plot(ax=ax, column="CVEGEO", cmap="Set2")
 ax.set_title("Ernersto aguirre, Tabasco", fontsize=16, color="white")
 plt.show()
+
+#%%
+# ------- UPDATE --------
+
+grafo_podado_2, removed_nodes_2 = fc.podar_grado_2(grafo_podado)
+
+fig, ax = ox.plot_graph(grafo_podado_2, show=False, close=False)
+fig.patch.set_facecolor('black')  # fondo fuera del gráfico
+ax.set_facecolor('black')
+gdf_poly.boundary.plot(ax=ax, color="red")
+gdf_union.plot(ax=ax, column="CVEGEO", cmap="Set2")
+ax.set_title("Ernersto aguirre, Tabasco", fontsize=16, color="white")
+plt.show()
+
+
+
+#%%
