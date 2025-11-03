@@ -1,5 +1,5 @@
 """
-Road Network Analysis for Tabasco Localities.
+Road Network Analysis
 
 This script analyzes road networks in Tabasco, Mexico using graph theory and
 geospatial analysis. It performs the following operations:
@@ -13,9 +13,6 @@ geospatial analysis. It performs the following operations:
 The analysis focuses on understanding connectivity between localities and
 simplifying complex road network representations.
 
-Author: Daniela Renee
-Project: Road Networks Analysis (Redes Viales) - Honors Thesis
-Location: Ernesto Aguirre, Tabasco, Mexico
 """
 
 import geopandas as gpd
@@ -32,7 +29,7 @@ import numpy as np
 from shapely.geometry import Point
 from scipy.spatial import Delaunay
 
-
+#%%
 # ============================================================================
 # SECTION 1: DATA LOADING AND PREPROCESSING
 # ============================================================================
@@ -106,7 +103,7 @@ gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
 ax.set_title("Ernesto Aguirre, Tabasco - Labeled Road Network", fontsize=16, color="white")
 plt.show()
 
-
+#%%
 # ============================================================================
 # SECTION 2: BOUNDARY NODE IDENTIFICATION
 # ============================================================================
@@ -144,7 +141,7 @@ for node in graph.nodes:
 # for locality, nodes in boundary_nodes_by_locality.items():
 #     print(f"Locality {locality} has {len(nodes)} boundary nodes")
 
-
+#%%
 # ============================================================================
 # SECTION 3: CLIQUE GRAPH CONSTRUCTION
 # ============================================================================
@@ -223,7 +220,7 @@ ax.set_ylim(y_min, y_max)
 
 plt.show()
 
-
+#%%
 # ============================================================================
 # SECTION 4: DELAUNAY TRIANGULATION OF LOCALITY CENTROIDS
 # ============================================================================
@@ -284,7 +281,7 @@ plt.ylabel("Latitude")
 plt.gca().set_aspect('equal', 'box')
 plt.show()
 
-
+#%%
 # ============================================================================
 # SECTION 5: GRAPH SIMPLIFICATION BY PRUNING
 # ============================================================================
@@ -307,7 +304,7 @@ fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
 gdf_localities.boundary.plot(ax=ax, color="red")
 gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("Ernesto Aguirre, Tabasco - After Degree-1 Pruning",
+ax.set_title("After Degree-1 Pruning",
              fontsize=16, color="white")
 plt.show()
 
@@ -320,10 +317,45 @@ fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
 gdf_localities.boundary.plot(ax=ax, color="red")
 gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("Ernesto Aguirre, Tabasco - After Full Pruning (Deg-1 & Deg-2)",
+ax.set_title("After Full Pruning (Deg-1 & Deg-2)",
              fontsize=16, color="white")
 plt.show()
 
 print(f"Original graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
 print(f"After degree-1 pruning: {pruned_graph_deg1.number_of_nodes()} nodes, {pruned_graph_deg1.number_of_edges()} edges")
 print(f"After degree-2 pruning: {pruned_graph_deg2.number_of_nodes()} nodes, {pruned_graph_deg2.number_of_edges()} edges")
+
+#%%
+# ============================================================================
+# SECTION 6: SIMPLIFY MULTIPLE EDGES
+# ============================================================================
+#
+# Purpose: Remove parallel edges between node pairs, keeping only the shortest
+#
+# Approach: For each pair of nodes (u, v) with multiple edges in the same
+#           direction, keep only the edge with minimum length
+#
+# Output: Simplified graph with no parallel edges, plus statistics about
+#         which edges were removed
+# ============================================================================
+
+# Simplify multiple edges (keep shortest between each node pair)
+graph_original, graph_simplified, multiple_edges_info = fc.simplificar_aristas_multiples(pruned_graph_deg2)
+
+# Visualize the simplified graph
+fig, ax = ox.plot_graph(graph_simplified, show=False, close=False)
+fig.patch.set_facecolor('black')
+ax.set_facecolor('black')
+gdf_localities.boundary.plot(ax=ax, color="red")
+gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+ax.set_title("After Simplifying Multiple Edges",
+             fontsize=16, color="white")
+plt.show()
+
+# Print statistics about edge simplification
+print(f"\nMultiple edges simplification:")
+print(f"Original graph: {graph_original.number_of_edges()} edges")
+print(f"Simplified graph: {graph_simplified.number_of_edges()} edges")
+print(f"Number of node pairs with multiple edges: {len(multiple_edges_info)}")
+total_removed = sum(info['removed'] for info in multiple_edges_info.values())
+print(f"Total edges removed: {total_removed}")

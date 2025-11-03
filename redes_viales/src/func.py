@@ -6,9 +6,9 @@ as NetworkX graphs. It includes functionality for:
 - Computing heuristics for pathfinding algorithms
 - Building clique graphs from locality boundary nodes
 - Pruning graphs by removing low-degree vertices
+- Simplifying multiple edges by keeping the shortest one
 
-Author: Daniela Renee
-Project: Road Networks Analysis (Redes Viales)
+
 """
 
 import networkx as nx
@@ -40,13 +40,6 @@ def euclidean_heuristic(u, v, graph):
     float
         The Euclidean distance between nodes u and v.
 
-    Examples
-    --------
-    >>> G = nx.Graph()
-    >>> G.add_node(1, x=0, y=0)
-    >>> G.add_node(2, x=3, y=4)
-    >>> euclidean_heuristic(1, 2, G)
-    5.0
     """
     x1, y1 = graph.nodes[u]['x'], graph.nodes[u]['y']
     x2, y2 = graph.nodes[v]['x'], graph.nodes[v]['y']
@@ -177,14 +170,6 @@ def podar_grado_1(graph, min_degree=1):
     - Maintains a queue and set to avoid processing nodes multiple times
     - Time complexity: O(V + E) where V is vertices and E is edges
 
-    Examples
-    --------
-    >>> G = nx.Graph()
-    >>> G.add_edges_from([(1,2), (2,3), (3,4), (4,5)])
-    >>> G.add_edge(2, 6)  # leaf node attached to node 2
-    >>> pruned_G, removed = podar_grado_1(G)
-    >>> removed
-    [6, 1, 5]
     """
     H = graph.copy()
     Hu = H.to_undirected(as_view=True)  # Undirected view for degree calculations
@@ -256,15 +241,6 @@ def podar_grado_2(graph):
     - Uses undirected view for degree calculations even if input is directed
     - The function selects the shortest edge when multiple edges exist between nodes
     - Time complexity: O(V + E) where V is vertices and E is edges
-
-    Examples
-    --------
-    >>> G = nx.Graph()
-    >>> G.add_edge(1, 2, length=10)
-    >>> G.add_edge(2, 3, length=15)
-    >>> G.add_edge(3, 4, length=20)
-    >>> simplified_G, removed = podar_grado_2(G)
-    >>> # Node 2 and 3 are removed, edge (1,4) has length=45
     """
     H = graph.copy()
     Hu = H.to_undirected(as_view=True)  # Undirected view for degree calculations
@@ -331,3 +307,106 @@ def podar_grado_2(graph):
             H.remove_node(v)
 
     return H, removed_nodes
+
+def simplificar_aristas_multiples(graph, weight_attr='length'):
+    """
+    Identify multiple edges between node pairs and keep only the smallest one.
+
+    This function processes MultiDiGraph instances to remove parallel edges
+    (multiple edges between the same pair of nodes in the same direction).
+    For each ordered pair of nodes (u, v) with multiple edges from u to v,
+    only the edge with the minimum weight is kept.
+
+    This is useful for simplifying road networks where multiple road segments
+    might exist between the same intersections, and we want to keep only the
+    shortest/fastest route.
+
+    Parameters
+    ----------
+    graph : networkx.MultiDiGraph
+        The input directed multigraph that may contain parallel edges.
+        Edges should have a weight attribute (default: 'length').
+    weight_attr : str, optional (default='length')
+        The edge attribute to use for comparing edge weights.
+        The edge with the minimum value of this attribute is kept.
+
+    Returns
+    -------
+    graph_original : networkx.MultiDiGraph
+        A copy of the original graph with all multiple edges preserved.
+    graph_simplified : networkx.MultiDiGraph
+        The simplified graph with only the minimum-weight edge kept between
+        each ordered pair of nodes.
+    multiple_edges_info : dict
+        Dictionary containing information about removed edges:
+        {(u, v): {'count': n, 'removed': m, 'kept_weight': w}}
+        where n is total edges from u to v, m is number removed,
+        w is the weight of the kept edge.
+
+    Notes
+    -----
+    - This function only works with MultiDiGraph instances
+    - Edges (u,v) and (v,u) are treated separately (direction matters)
+    - If an edge lacks the specified weight attribute, it defaults to float('inf')
+    - Original graph is not modified; copies are returned
+
+
+    """
+    # Create copies of the input graph
+    graph_original = graph.copy()
+    graph_simplified = graph.copy()
+
+    # Dictionary to store information about which node pairs had multiple edges
+    # {(u, v): {'count': total_edges, 'removed': num_removed, 'kept_weight': min_weight}}
+    multiple_edges_info = {}
+
+    # Set to track which (u, v) pairs are already processed
+    processed_pairs = set()
+
+    # Iterate through edges in the graph
+    # where key is the node's identifier and data is a dict of its attributes
+
+    # using list() because the graph will be modified during iteration
+    for u, v, key, data in list(graph_simplified.edges(keys=True, data=True)):
+        pair = (u, v)
+
+        # skip if already processed
+        if pair in processed_pairs:
+            continue
+
+        # get all edges from u to v
+        if graph_simplified.has_edge(u, v):
+            edges = graph_simplified[u][v] # get info
+
+            # only process if there are multiple edges
+            if len(edges) > 1:
+                # find edge with minimum weight
+                min_key = None           # to store the key of the shortest edge
+                min_weight = float('inf')  # start with infinity
+
+                # iterate all parallel edges
+                for edge_key, edge_data in edges.items():
+                    # get weight (default: inf)
+                    weight = edge_data.get(weight_attr, float('inf'))
+
+                    if weight < min_weight: # update
+                        min_weight = weight
+                        min_key = edge_key
+
+                # Store info in dict
+                multiple_edges_info[pair] = {
+                    'count': len(edges),           # number of parallel edges
+                    'removed': len(edges) - 1,     # number of removed edges
+                    'kept_weight': min_weight      # weight of the edge we're keeping
+                }
+
+                # remove all edges except the one with min weight
+                # we use a list since the graph will be modified during iteration
+                for edge_key in list(edges.keys()):
+                    if edge_key != min_key: # using the key
+                        graph_simplified.remove_edge(u, v, key=edge_key)
+
+        # mark pair as processed
+        processed_pairs.add(pair)
+
+    return graph_original, graph_simplified, multiple_edges_info
