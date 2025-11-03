@@ -1,3 +1,23 @@
+"""
+Road Network Analysis for Tabasco Localities.
+
+This script analyzes road networks in Tabasco, Mexico using graph theory and
+geospatial analysis. It performs the following operations:
+
+1. Load geographic data (shapefiles) and road network data (OSMnx)
+2. Identify boundary nodes between different localities (CVEGEO regions)
+3. Build clique graphs representing locality connections
+4. Perform Delaunay triangulation on locality centroids
+5. Simplify road networks by pruning low-degree nodes
+
+The analysis focuses on understanding connectivity between localities and
+simplifying complex road network representations.
+
+Author: Daniela Renee
+Project: Road Networks Analysis (Redes Viales) - Honors Thesis
+Location: Ernesto Aguirre, Tabasco, Mexico
+"""
+
 import geopandas as gpd
 import pandas as pd
 import osmnx as ox
@@ -13,219 +33,297 @@ from shapely.geometry import Point
 from scipy.spatial import Delaunay
 
 
-#%%
+# ============================================================================
+# SECTION 1: DATA LOADING AND PREPROCESSING
+# ============================================================================
+#
+# Purpose: Load geographic data and road network, then label nodes with their
+#          corresponding locality (CVEGEO code)
+#
+# Steps:
+#   1. Load locality polygons from shapefile
+#   2. Download road network from OpenStreetMap
+#   3. Convert nodes to GeoDataFrame
+#   4. Perform spatial join to assign localities to nodes
+#   5. Visualize the labeled network
+# ============================================================================
 
-# Ruta al archivo shapefile
-ruta = "/Users/danielarenee/Desktop/honores/redes_viales/Data/shp/27l.shp"
+# Load shapefile containing locality polygons (CVEGEO regions)
+shapefile_path = "/Users/danielarenee/Desktop/honores/redes_viales/Data/shp/27l.shp"
 
-gdf_poly = gpd.read_file(ruta)
-gdf_poly = gdf_poly.to_crs(4326)
+gdf_localities = gpd.read_file(shapefile_path)
+# Convert to EPSG:4326 (WGS84) coordinate reference system
+gdf_localities = gdf_localities.to_crs(4326)
 
-# crear grafo
-lat =17.930714
+# Download road network graph from OpenStreetMap using OSMnx
+# Center point coordinates for Ernesto Aguirre, Tabasco
+lat = 17.930714
 lon = -93.507545
-"""
-lat= 18.067192
-lon = -93.498951
-"""
+# Alternative center point (commented out):
+# lat = 18.067192
+# lon = -93.498951
 center_point = (lat, lon)
 graph = ox.graph_from_point(
     center_point,
-    dist=7000,
-    network_type='drive'
+    dist=7000,  # 7km radius from center point
+    network_type='drive'  # Only drivable roads
 )
 
-# crear df de los nodos
-nodes_data = [] #set para los nodos
+# Extract node data from graph into a DataFrame
+nodes_data = []
 for node_id, data in graph.nodes(data=True):
     nodes_data.append({
-        "node_id": node_id, #id, x y y
-        "x": data["x"],
-        "y": data["y"]
+        "node_id": node_id,
+        "x": data["x"],  # Longitude
+        "y": data["y"]   # Latitude
     })
-df_nodes = pd.DataFrame(nodes_data) #crear el df
+df_nodes = pd.DataFrame(nodes_data)
 
-# crear gdf
-nodes_geom =[]
+# Convert nodes DataFrame to GeoDataFrame with Point geometries
+nodes_geom = []
 for _, row in df_nodes.iterrows():
-    punto = Point(row["x"],row["y"]) #punto para la geometria
-    nodes_geom.append(punto)
+    point = Point(row["x"], row["y"])
+    nodes_geom.append(point)
 df_nodes["geometry"] = nodes_geom
 gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry="geometry", crs="EPSG:4326")
 
-# union espacial
-#busca que puntos estan dentro de que poligono
-gdf_union = gpd.sjoin(gdf_nodes, gdf_poly, how="left", predicate="within")
+# Perform spatial join to determine which locality each node belongs to
+# This assigns CVEGEO codes to nodes based on polygon containment
+gdf_nodes_labeled = gpd.sjoin(gdf_nodes, gdf_localities, how="left", predicate="within")
 
-# etiquetar nodos
-for _, row in gdf_union.iterrows(): #asignar el cvgeo de cada nodo como atributo
+# Label graph nodes with their locality (CVEGEO) as a node attribute
+for _, row in gdf_nodes_labeled.iterrows():
     node_id = row["node_id"]
-    label = row["CVEGEO"]
-    graph.nodes[node_id]["CVEGEO"] = label #cada nodo en el grafo tiene un atributo nuevo "CVEGEO"
+    locality_code = row["CVEGEO"]
+    graph.nodes[node_id]["CVEGEO"] = locality_code
 
-
+# Visualize the labeled road network
 fig, ax = ox.plot_graph(graph, show=False, close=False)
-fig.patch.set_facecolor('black')  # fondo fuera del gráfico
+fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
-gdf_poly.boundary.plot(ax=ax, color="red")
-gdf_union.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("Ernersto aguirre, Tabasco", fontsize=16, color="white")
+gdf_localities.boundary.plot(ax=ax, color="red")
+gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+ax.set_title("Ernesto Aguirre, Tabasco - Labeled Road Network", fontsize=16, color="white")
 plt.show()
 
-# 1) identificar nodos frontera en un diccionario
-fronteras_por_localidad = dict()
+
+# ============================================================================
+# SECTION 2: BOUNDARY NODE IDENTIFICATION
+# ============================================================================
+#
+# Purpose: Identify nodes that lie on the boundary between different localities
+#
+# Approach: A node is considered a boundary node if it has at least one neighbor
+#           belonging to a different locality (CVEGEO code)
+#
+# Output: Dictionary mapping each locality code to its set of boundary nodes
+# ============================================================================
+
+# Dictionary to store boundary nodes for each locality
+# Format: {locality_code: set(boundary_node_ids)}
+boundary_nodes_by_locality = dict()
 
 for node in graph.nodes:
-    cvgeo_node = graph.nodes[node]["CVEGEO"]
-    if cvgeo_node is None:
-        continue # saltar los que no estan en localidades
+    node_locality = graph.nodes[node]["CVEGEO"]
+    if node_locality is None:
+        continue  # Skip nodes not in any locality
 
-    for vecino in graph.neighbors(node):
-        cvgeo_vecino = graph.nodes[vecino]["CVEGEO"]
-        if cvgeo_vecino is None:
-            continue # saltar vecinos sin localidad
-        if cvgeo_vecino != cvgeo_node: #si es nodo frontera...
-            if cvgeo_node not in fronteras_por_localidad:
-                fronteras_por_localidad[cvgeo_node] = set() #conjunto de nodos frontera
-            fronteras_por_localidad[cvgeo_node].add(node)
-            break # basta con un vecino distinto
+    # Check if this node has neighbors in different localities
+    for neighbor in graph.neighbors(node):
+        neighbor_locality = graph.nodes[neighbor]["CVEGEO"]
+        if neighbor_locality is None:
+            continue  # Skip neighbors without locality
+        if neighbor_locality != node_locality:
+            # This node connects to a different locality, so it's a boundary node
+            if node_locality not in boundary_nodes_by_locality:
+                boundary_nodes_by_locality[node_locality] = set()
+            boundary_nodes_by_locality[node_locality].add(node)
+            break  # One different neighbor is sufficient
+
+# Optional: Print statistics about boundary nodes
+# for locality, nodes in boundary_nodes_by_locality.items():
+#     print(f"Locality {locality} has {len(nodes)} boundary nodes")
 
 
-#for loc, nodos in fronteras_por_localidad.items():
-#    print(f"Localidad {loc} tiene {len(nodos)} nodos frontera")
+# ============================================================================
+# SECTION 3: CLIQUE GRAPH CONSTRUCTION
+# ============================================================================
+#
+# Purpose: Build a reduced graph where each locality is represented by a clique
+#          of its boundary nodes
+#
+# Approach: For each locality, create a complete graph (clique) connecting all
+#           pairs of boundary nodes with weighted edges representing shortest
+#           paths within that locality
+#
+# Output: A unified graph containing all boundary nodes connected within and
+#         across localities
+# ============================================================================
 
+# Create empty graph to store the complete reduced network
+reduced_graph = nx.Graph()
 
-# 3) ejecutar para cada localidad
-grafo_reducido_total = nx.Graph()
-for cvgeo in fronteras_por_localidad.keys(): # recorrer cada localidad con nodos frontera
-    grafo_local = fc.construir_clique_localidad(graph, cvgeo, fronteras_por_localidad)
+# Build clique for each locality and add to the reduced graph
+for locality_code in boundary_nodes_by_locality.keys():
+    # Build clique graph for this locality
+    locality_clique = fc.construir_clique_localidad(graph, locality_code, boundary_nodes_by_locality)
 
-    # agregar todos los nodos al grafo total (con atributos)
-    for nodo, datos in grafo_local.nodes(data=True):
-        grafo_reducido_total.add_node(nodo, **datos)
-    # agregar todas las aristas (con peso y camino)
-    for u, v, datos in grafo_local.edges(data=True):
-        grafo_reducido_total.add_edge(u, v, **datos)
+    # Add all nodes from locality clique to the reduced graph (with attributes)
+    for node_id, node_data in locality_clique.nodes(data=True):
+        reduced_graph.add_node(node_id, **node_data)
 
-# 4) visualizar
+    # Add all edges from locality clique to the reduced graph (with weight and path)
+    for u, v, edge_data in locality_clique.edges(data=True):
+        reduced_graph.add_edge(u, v, **edge_data)
+
+# Visualize the reduced boundary node network
 fig, ax = plt.subplots(figsize=(10, 10))
-fig.patch.set_facecolor('black')  # fondo fuera del gráfico
-ax.set_facecolor('black')         # fondo dentro del gráfico
-# poligonos de localidades como fondo
-gdf_poly.boundary.plot(ax=ax, color="gray", linewidth=0.5)
+fig.patch.set_facecolor('black')
+ax.set_facecolor('black')
 
-# dibujar los nodos frontera
-pos = {}
-# recorremos todos los nodos del grafo reducido, junto con sus atributos
-for n, d in grafo_reducido_total.nodes(data=True):
-    x = d["x"]
-    y = d["y"]
-    pos[n] = (x, y)
+# Plot locality polygons as background
+gdf_localities.boundary.plot(ax=ax, color="gray", linewidth=0.5)
 
+# Extract node positions for visualization
+node_positions = {}
+for node_id, node_data in reduced_graph.nodes(data=True):
+    x = node_data["x"]
+    y = node_data["y"]
+    node_positions[node_id] = (x, y)
+
+# Draw boundary nodes
 nx.draw_networkx_nodes(
-    grafo_reducido_total,
-    pos=pos,
+    reduced_graph,
+    pos=node_positions,
     ax=ax,
     node_size=24,
     node_color="white"
 )
 
-# dibujar las aristas entre nodos frontera
+# Draw edges between boundary nodes
 nx.draw_networkx_edges(
-    grafo_reducido_total,
-    pos=pos,
+    reduced_graph,
+    pos=node_positions,
     ax=ax,
     width=1,
     edge_color="orange"
 )
 
-ax.set_title("Red de nodos frontera por localidad", fontsize=20, color="white")
+ax.set_title("Boundary Node Network by Locality", fontsize=20, color="white")
 ax.axis("off")
 
-# extraer listas de coordenadas x e y
-x_coords = [coord[0] for coord in pos.values()]
-y_coords = [coord[1] for coord in pos.values()]
-margin = 0.002  # puedes aumentar o reducir esto
+# Set axis limits with small margin around nodes
+x_coords = [coord[0] for coord in node_positions.values()]
+y_coords = [coord[1] for coord in node_positions.values()]
+margin = 0.002  # Adjust this value to increase/decrease margin
 x_min, x_max = min(x_coords) - margin, max(x_coords) + margin
 y_min, y_max = min(y_coords) - margin, max(y_coords) + margin
-# aplicar los límites al gráfico
 ax.set_xlim(x_min, x_max)
 ax.set_ylim(y_min, y_max)
 
 plt.show()
 
-# filtrar por localidad - crea diccionario CVGEO: [lista de nodos]
-localidades_por_cvegeo = {}
-for node, data in graph.nodes(data=True):
-    cvgeo = data.get("CVEGEO")
-    if cvgeo is None:
-        continue
-    localidades_por_cvegeo.setdefault(cvgeo, []).append(node)
 
-# conseguir centroides- loc : tupla de coords
-centroides = {}
-for loc, nodes in localidades_por_cvegeo.items():
+# ============================================================================
+# SECTION 4: DELAUNAY TRIANGULATION OF LOCALITY CENTROIDS
+# ============================================================================
+#
+# Purpose: Create a triangulation connecting locality centroids to understand
+#          spatial relationships between localities
+#
+# Approach: Calculate the centroid of each locality (mean of all node positions)
+#           and perform Delaunay triangulation on these centroids
+#
+# Output: Delaunay triangulation visualization showing locality connections
+# ============================================================================
+
+# Group nodes by locality
+# Format: {locality_code: [list_of_node_ids]}
+localities_dict = {}
+for node, data in graph.nodes(data=True):
+    locality_code = data.get("CVEGEO")
+    if locality_code is None:
+        continue
+    localities_dict.setdefault(locality_code, []).append(node)
+
+# Calculate centroid for each locality (mean of all node coordinates)
+centroids = {}
+for locality_code, node_list in localities_dict.items():
     coords = []
-    for n in nodes:
-        data_nodo = graph.nodes[n]
-        if "x" in data_nodo and "y" in data_nodo:
-            x = data_nodo["x"]
-            y = data_nodo["y"]
+    for node_id in node_list:
+        node_data = graph.nodes[node_id]
+        if "x" in node_data and "y" in node_data:
+            x = node_data["x"]
+            y = node_data["y"]
             coords.append((x, y))
     if not coords:
         continue
-    #conseguir una lista de xs y una de ys
+    # Calculate mean x and y coordinates
     xs, ys = zip(*coords)
-    centroides[loc] = (sum(xs) / len(xs), sum(ys) / len(ys))
+    centroids[locality_code] = (sum(xs) / len(xs), sum(ys) / len(ys))
 
-# lista de CVGEOS de las localidades que tienen centroide
-labels = list(centroides.keys())
-# covertir a array para input delaunay
-points = np.array([centroides[loc] for loc in labels])
+# Prepare data for Delaunay triangulation
+locality_labels = list(centroids.keys())
+# Convert centroids to numpy array
+centroid_points = np.array([centroids[loc] for loc in locality_labels])
 
-# construir triangulacion de delaunay
-tri = Delaunay(points)
+# Compute Delaunay triangulation
+delaunay_triangulation = Delaunay(centroid_points)
 
-# graficar
-plt.figure(figsize=(6,6))
-plt.triplot(points[:,0], points[:,1], tri.simplices, linewidth=0.8)
-plt.scatter(points[:,0], points[:,1], color='red', s=30)
-for i, loc in enumerate(labels):
-    plt.text(points[i,0], points[i,1], loc, fontsize=8, ha='center', va='center')
-plt.title("Triangulación de Delaunay de centroides")
-plt.xlabel("Longitud")
-plt.ylabel("Latitud")
+# Visualize the triangulation
+plt.figure(figsize=(6, 6))
+plt.triplot(centroid_points[:, 0], centroid_points[:, 1],
+            delaunay_triangulation.simplices, linewidth=0.8)
+plt.scatter(centroid_points[:, 0], centroid_points[:, 1], color='red', s=30)
+for i, locality_code in enumerate(locality_labels):
+    plt.text(centroid_points[i, 0], centroid_points[i, 1], locality_code,
+             fontsize=8, ha='center', va='center')
+plt.title("Delaunay Triangulation of Locality Centroids")
+plt.xlabel("Longitude")
+plt.ylabel("Latitude")
 plt.gca().set_aspect('equal', 'box')
 plt.show()
 
-#%%
-# hacer función para ir eliminando iterativamente los vértices de grado 1
 
+# ============================================================================
+# SECTION 5: GRAPH SIMPLIFICATION BY PRUNING
+# ============================================================================
+#
+# Purpose: Simplify the road network by iteratively removing low-degree nodes
+#
+# Approach:
+#   Step 1: Remove degree-1 nodes (dead ends / cul-de-sacs)
+#   Step 2: Remove degree-2 nodes and merge their incident edges
+#
+# Output: Progressively simplified graphs with fewer nodes and edges
+# ============================================================================
 
+# STEP 1: Prune degree-1 nodes (leaf nodes)
+pruned_graph_deg1, removed_nodes_deg1 = fc.podar_grado_1(graph)
 
-grafo_podado, removed_nodes = fc.podar_grado_1(graph)
-
-fig, ax = ox.plot_graph(grafo_podado, show=False, close=False)
-fig.patch.set_facecolor('black')  # fondo fuera del gráfico
+# Visualize graph after degree-1 pruning
+fig, ax = ox.plot_graph(pruned_graph_deg1, show=False, close=False)
+fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
-gdf_poly.boundary.plot(ax=ax, color="red")
-gdf_union.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("Ernersto aguirre, Tabasco", fontsize=16, color="white")
+gdf_localities.boundary.plot(ax=ax, color="red")
+gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+ax.set_title("Ernesto Aguirre, Tabasco - After Degree-1 Pruning",
+             fontsize=16, color="white")
 plt.show()
 
-#%%
-# ------- UPDATE --------
+# STEP 2: Prune degree-2 nodes (merge straight segments)
+pruned_graph_deg2, removed_nodes_deg2 = fc.podar_grado_2(pruned_graph_deg1)
 
-grafo_podado_2, removed_nodes_2 = fc.podar_grado_2(grafo_podado)
-
-fig, ax = ox.plot_graph(grafo_podado_2, show=False, close=False)
-fig.patch.set_facecolor('black')  # fondo fuera del gráfico
+# Visualize graph after degree-2 pruning
+fig, ax = ox.plot_graph(pruned_graph_deg2, show=False, close=False)
+fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
-gdf_poly.boundary.plot(ax=ax, color="red")
-gdf_union.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("Ernersto aguirre, Tabasco", fontsize=16, color="white")
+gdf_localities.boundary.plot(ax=ax, color="red")
+gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+ax.set_title("Ernesto Aguirre, Tabasco - After Full Pruning (Deg-1 & Deg-2)",
+             fontsize=16, color="white")
 plt.show()
 
-
-
-#%%
+print(f"Original graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
+print(f"After degree-1 pruning: {pruned_graph_deg1.number_of_nodes()} nodes, {pruned_graph_deg1.number_of_edges()} edges")
+print(f"After degree-2 pruning: {pruned_graph_deg2.number_of_nodes()} nodes, {pruned_graph_deg2.number_of_edges()} edges")
