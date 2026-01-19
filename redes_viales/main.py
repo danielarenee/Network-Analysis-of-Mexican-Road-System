@@ -86,6 +86,7 @@ gdf_nodes = gpd.GeoDataFrame(df_nodes, geometry="geometry", crs="EPSG:4326")
 
 # Perform spatial join to determine which locality each node belongs to
 # This assigns CVEGEO codes to nodes based on polygon containment
+# Nodes outside all polygons will have NaN and are skipped in later processing
 gdf_nodes_labeled = gpd.sjoin(gdf_nodes, gdf_localities, how="left", predicate="within")
 
 # Label graph nodes with their locality (CVEGEO) as a node attribute
@@ -122,20 +123,20 @@ boundary_nodes_by_locality = dict()
 
 for node in graph.nodes:
     node_locality = graph.nodes[node]["CVEGEO"]
-    if node_locality is None:
-        continue  # Skip nodes not in any locality
+    if pd.isna(node_locality):
+        continue  # Skip nodes not in any locality (NaN from spatial join)
 
-    # Check if this node has neighbors in different localities
+    # Check if this node has neighbors in different localities or outside all localities
     for neighbor in graph.neighbors(node):
         neighbor_locality = graph.nodes[neighbor]["CVEGEO"]
-        if neighbor_locality is None:
-            continue  # Skip neighbors without locality
-        if neighbor_locality != node_locality:
-            # This node connects to a different locality, so it's a boundary node
+        # A node is a boundary node if it connects to:
+        # 1. A node in a different locality, OR
+        # 2. A node outside all localities (NaN) - meaning it's at the edge
+        if pd.isna(neighbor_locality) or neighbor_locality != node_locality:
             if node_locality not in boundary_nodes_by_locality:
                 boundary_nodes_by_locality[node_locality] = set()
             boundary_nodes_by_locality[node_locality].add(node)
-            break  # One different neighbor is sufficient
+            break  # One different/external neighbor is sufficient
 
 # Optional: Print statistics about boundary nodes
 # for locality, nodes in boundary_nodes_by_locality.items():
@@ -239,7 +240,7 @@ plt.show()
 localities_dict = {}
 for node, data in graph.nodes(data=True):
     locality_code = data.get("CVEGEO")
-    if locality_code is None:
+    if pd.isna(locality_code):
         continue
     localities_dict.setdefault(locality_code, []).append(node)
 
@@ -283,79 +284,67 @@ plt.show()
 
 #%%
 # ============================================================================
-# SECTION 5: GRAPH SIMPLIFICATION BY PRUNING
+# SECTION 5: ITERATIVE GRAPH SIMPLIFICATION
 # ============================================================================
 #
-# Purpose: Simplify the road network by iteratively removing low-degree nodes
+# Purpose: Simplify the road network through iterative application of three
+#          operations until a fixed point is reached
 #
-# Approach:
-#   Step 1: Remove degree-1 nodes (dead ends / cul-de-sacs)
-#   Step 2: Remove degree-2 nodes and merge their incident edges
+# Approach: Repeatedly apply these steps until no more changes occur:
+#   1. Simplify multiple edges (keep shortest between each node pair)
+#   2. Remove degree-1 nodes (dead ends)
+#   3. Remove degree-2 nodes and merge their incident edges
 #
-# Output: Progressively simplified graphs with fewer nodes and edges
 # ============================================================================
 
-# STEP 1: Prune degree-1 nodes (leaf nodes)
-pruned_graph_deg1, removed_nodes_deg1 = fc.podar_grado_1(graph)
+# Perform iterative simplification until convergence
+simplified_graph, num_iterations = fc.simplify_iteratively(graph)
 
-# Visualize graph after degree-1 pruning
-fig, ax = ox.plot_graph(pruned_graph_deg1, show=False, close=False)
+# Visualize the fully simplified graph
+fig, ax = ox.plot_graph(simplified_graph, show=False, close=False)
 fig.patch.set_facecolor('black')
 ax.set_facecolor('black')
 gdf_localities.boundary.plot(ax=ax, color="red")
 gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("After Degree-1 Pruning",
+ax.set_title(f"Fully Simplified Graph (Converged in {num_iterations} iterations)",
              fontsize=16, color="white")
 plt.show()
-
-# STEP 2: Prune degree-2 nodes (merge straight segments)
-pruned_graph_deg2, removed_nodes_deg2 = fc.podar_grado_2(pruned_graph_deg1)
-
-# Visualize graph after degree-2 pruning
-fig, ax = ox.plot_graph(pruned_graph_deg2, show=False, close=False)
-fig.patch.set_facecolor('black')
-ax.set_facecolor('black')
-gdf_localities.boundary.plot(ax=ax, color="red")
-gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("After Full Pruning (Deg-1 & Deg-2)",
-             fontsize=16, color="white")
-plt.show()
-
-print(f"Original graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges")
-print(f"After degree-1 pruning: {pruned_graph_deg1.number_of_nodes()} nodes, {pruned_graph_deg1.number_of_edges()} edges")
-print(f"After degree-2 pruning: {pruned_graph_deg2.number_of_nodes()} nodes, {pruned_graph_deg2.number_of_edges()} edges")
 
 #%%
 # ============================================================================
-# SECTION 6: SIMPLIFY MULTIPLE EDGES
-# ============================================================================
-#
-# Purpose: Remove parallel edges between node pairs, keeping only the shortest
-#
-# Approach: For each pair of nodes (u, v) with multiple edges in the same
-#           direction, keep only the edge with minimum length
-#
-# Output: Simplified graph with no parallel edges, plus statistics about
-#         which edges were removed
+# SECTION 6: INTER-REGION DISTANCE MATRIX
 # ============================================================================
 
-# Simplify multiple edges (keep shortest between each node pair)
-graph_original, graph_simplified, multiple_edges_info = fc.simplificar_aristas_multiples(pruned_graph_deg2)
+# Compute inter-region distance matrix
+distance_matrix, node_to_region = fc.calculate_border_nodes_distance_matrix(
+    graph,
+    boundary_nodes_by_locality
+)
 
-# Visualize the simplified graph
-fig, ax = ox.plot_graph(graph_simplified, show=False, close=False)
-fig.patch.set_facecolor('black')
-ax.set_facecolor('black')
-gdf_localities.boundary.plot(ax=ax, color="red")
-gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-ax.set_title("After Simplifying Multiple Edges",
-             fontsize=16, color="white")
-plt.show()
+# Print statistics about the distance matrix
+print(f"\n{'='*60}")
+print(f"INTER-REGION DISTANCE")
+print(f"{'='*60}")
 
-# Print statistics about edge simplification
-print(f"\nMultiple edges simplification:")
-print(f"Original graph: {graph_original.number_of_edges()} edges")
-print(f"Simplified graph: {graph_simplified.number_of_edges()} edges")
-print(f"Number of node pairs with multiple edges: {len(multiple_edges_info)}")
-total_removed = sum(info['removed'] for info in multiple_edges_info.values())
-print(f"Total edges removed: {total_removed}")
+# total inter-region connections
+total_connections = sum(len(targets) for targets in distance_matrix.values())
+print(f"Total inter-region connections: {total_connections}")
+
+# total boundary nodes
+total_boundary_nodes = len(node_to_region)
+print(f"Total boundary nodes: {total_boundary_nodes}")
+
+# Show sample distances for first boundary node
+print(f"\nSample inter-region distances (first boundary node):")
+
+for source_node, targets in distance_matrix.items():
+    source_region = node_to_region[source_node]
+    print(f"\n  First 5 targets grom node {source_node} (region {source_region}):")
+
+    # Primeros 5 targets
+    for target_node, distance in list(targets.items())[:5]:
+        target_region = node_to_region[target_node]
+        print(f"    → node {target_node} (region {target_region}): {distance:.2f} m")
+
+    break
+

@@ -410,3 +410,152 @@ def simplificar_aristas_multiples(graph, weight_attr='length'):
         processed_pairs.add(pair)
 
     return graph_original, graph_simplified, multiple_edges_info
+
+def simplify_iteratively(graph):
+    """
+    Iteratively simplify a graph until no more changes occur.
+
+    This function applies three simplification operations in sequence and repeats
+    until the graph no longer changes. This is necessary because each operation
+    can create opportunities for the others:
+    - Simplifying multiple edges can create low-degree nodes
+    - Pruning degree-1 nodes can create degree-2 nodes
+    - Pruning degree-2 nodes can create multiple edges between previously
+      unconnected or singly-connected nodes
+
+    The algorithm stops when an iteration produces no change in the number of
+    nodes and edges, indicating a fixed point has been reached.
+
+    Simplification steps (repeated until convergence):
+    1. Simplify multiple edges - keep only shortest edge between each node pair
+    2. Prune degree-1 nodes - remove leaf nodes (dead ends)
+    3. Prune degree-2 nodes - merge nodes with exactly two neighbors
+
+    Parameters
+    ----------
+    graph : networkx.Graph or networkx.MultiDiGraph
+        The input graph to be simplified. Should have 'length' attribute on edges.
+
+    Returns
+    -------
+    simplified_graph : networkx.Graph or networkx.MultiDiGraph
+        The fully simplified graph after reaching a fixed point.
+    num_iterations : int
+        The number of iterations performed before convergence.
+
+    Notes
+    -----
+    - The function creates a copy of the input graph, so the original is unchanged
+
+    """
+    graph = graph.copy()
+
+    iteration = 0
+    while True:
+        nodes_before = graph.number_of_nodes()
+        edges_before = graph.number_of_edges()
+
+        _, graph, _ = simplificar_aristas_multiples(graph)
+        graph, _ = podar_grado_1(graph)
+        graph, _ = podar_grado_2(graph)
+
+        iteration += 1
+
+        # Check for convergence
+        nodes_after = graph.number_of_nodes()
+        edges_after = graph.number_of_edges()
+
+        if nodes_after == nodes_before and edges_after == edges_before:
+            break
+
+    return graph, iteration
+
+def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
+    """
+    Compute distance matrix between border vertices of different regions.
+
+    This function calculates shortest path distances between boundary nodes
+    that belong to DIFFERENT regions.
+
+    Algorithm Overview:
+    -------------------
+    1. Collect all boundary nodes across all regions
+    2. For each boundary node in region A:
+       a. Find all boundary nodes in OTHER regions (exclude same region)
+       b. Calculate shortest path distance to each external boundary node
+       c. Store in distance matrix
+    3. Result: Complete distance matrix for inter-region connectivity
+
+    Parameters
+    ----------
+    graph : networkx.Graph or networkx.MultiDiGraph
+        The road network graph with nodes having 'CVEGEO' attribute indicating
+        their region, and edges having 'length' or weight attribute.
+    boundary_nodes_by_locality : dict
+        Dictionary mapping region codes to sets of boundary node IDs.
+        Format: {locality_code: {node_id1, node_id2, ...}}
+        A boundary node is one that connects to at least one node in a
+        different region.
+
+    Returns
+    -------
+    distance_matrix : dict
+        Nested dictionary where distance_matrix[u][v] is the shortest path
+        distance from node u to node v, where u and v are in different regions.
+        Format: {node_u: {node_v: distance, ...}, ...}
+
+    """
+
+    # 1. Build a mapping from boundary nodes to their regions
+    node_to_region = {}
+    for region_code, boundary_nodes in boundary_nodes_by_locality.items():
+        for node_id in boundary_nodes:
+            node_to_region[node_id] = region_code
+
+    # Hence we get { node_id: "region_code"}
+
+    # 2. Collect all boundary nodes across all regions (for iteration)
+    # We turn the original dictionary of sets into a list
+    all_boundary_nodes = []
+    for boundary_nodes in boundary_nodes_by_locality.values():
+        all_boundary_nodes.extend(boundary_nodes) # .extend para desempaquetar en la lista
+
+    # 3. Initialize distance matrix (nested dict)
+    # Structure: distance_matrix[source][target] = distance
+    distance_matrix = {}
+
+    # 4. Compute shortest paths between boundary nodes of diff regions
+    for source_node in all_boundary_nodes:
+        # Get the region of the source node
+        source_region = node_to_region[source_node]
+        # Initialize dict for this source node
+        distance_matrix[source_node] = {}
+
+        # Iterate through all other boundary nodes
+        for target_node in all_boundary_nodes:
+            if source_node == target_node: # skip if same node
+                continue
+
+            # Get the region of the target node
+            target_region = node_to_region[target_node]
+
+            # Only if regions are different
+            if source_region != target_region:
+                try:
+                    # shortest path using Dijkstra's algorithm
+                    distance = nx.shortest_path_length(
+                        graph,
+                        source=source_node,
+                        target=target_node,
+                        weight='length' # length as weight
+                    )
+
+                    # store distance
+                    # dict[source_id, dict[target_id, distance]]
+                    distance_matrix[source_node][target_node] = distance
+
+                except nx.NetworkXNoPath:
+                    # No path between these nodes
+                    pass
+
+    return distance_matrix, node_to_region
