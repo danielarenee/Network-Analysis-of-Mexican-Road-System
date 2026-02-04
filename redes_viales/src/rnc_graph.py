@@ -12,6 +12,7 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}") # llevar track del proceso con timestamps
 
 #%% 2. CARGAR LAS CAPAS
+#tqdm
 
 log("Paso 1: Cargando las capas...")
 
@@ -90,6 +91,7 @@ doble_sentido_inverso['UNION_INI'], doble_sentido_inverso['UNION_FIN'] = \
     doble_sentido['UNION_FIN'].values, doble_sentido['UNION_INI'].values
 
 #TODO: si vamos a trabajar como grafo dirigido, tenemos que girar la geometry
+# usar metodo "reverse()" de linestring con apply(labda x.reverse())
 
 # actualizar CIRCULA a "Un sentido" en doble_sentido y su inverso
 doble_sentido['CIRCULA'] = 'Un sentido'
@@ -119,3 +121,11 @@ edges_final.to_file(
 log("-> edges_final.gpkg guardado")
 
 #%%
+
+# TODO: filtrar tipo vvial =/ camino
+# TODO: antes de guardar el df final hacer df=df.to_crs(6372) si me dice un error ponerle set_crs()
+# TODO: guardar geometria
+# TODO: crear red, leer como geodataframe
+# TODO: agregar jurisdiccion a las columnas del subset del dataframe
+# TODO: intentar filtrar un estado MORELOS y darselo a plot graph de osmx
+
