@@ -1,0 +1,6 @@
+# Ignore temporal folder
+road_network/temp/
+
+# ignore SQLite/GeoPackage temporary files
+*.gpkg-shm
+*.gpkg-wal
