@@ -1,6 +1,7 @@
 ###########
 # LIBRARIES
 ###########
+# Import libraries
 import geopandas as gpd
 
 from pathlib import Path
@@ -8,23 +9,22 @@ from pathlib import Path
 ###########
 # VARIABLES
 ###########
+# Set relative path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = str(BASE_DIR)
 
+# Columns to select from the join file
 columns_union = ["ID_UNION", "geometry"]
 
+# Features fo filter (roads)
 # COND_PAV: ['N/A', 'Con pavimento', 'Sin pavimento']
 road_surface = ["Con pavimento", "N/A"]
-
 # ESTATUS: ['Habilitado', 'Deshabilitado']
 status = ["Habilitado"]
-
 # CONDICION: ['En operación', 'En construcción - cerrado', 'En construcción - abierto']
 operational = ['En operación', 'En construcción - abierto']
-
 # CIRCULA: ['Un sentido', 'Dos sentidos', 'Cerrada en ambos sentidos', 'N/A']
 direction = ['Cerrada en ambos sentidos']
-
 # TIPO_VIAL: [      'Periférico',            'Calle',          'Avenida',
 #         'Circuito',         'Viaducto',          'Calzada',
 #         'Eje vial',           'Enlace',        'Retorno U',
@@ -37,7 +37,7 @@ direction = ['Cerrada en ambos sentidos']
 #   'Circunvalación',           'Pasaje']
 road_type = ["Privada", "Callejón", "Camino", "Cerrada", "Vereda",
              "Rampa de frenado", "Peatonal", "Pasaje"]
-
+# Coordinate Reference System
 epsg = 6372
 
 ###########
