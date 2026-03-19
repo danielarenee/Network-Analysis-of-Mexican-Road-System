@@ -17,36 +17,78 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = str(BASE_DIR)
 
 
-roads = gpd.read_file(DATA_DIR + "\\temp\\roads.gpkg")
 unions = gpd.read_file(DATA_DIR + "\\temp\\unions.gpkg")
-
+roads = gpd.read_file(DATA_DIR + "\\temp\\roads.gpkg")
 
 # Create digraph
-G = nx.DiGraph()
+G = nx.MultiDiGraph()
+
+# Set graphs attributes
+crs = unions.crs
+epsg = crs.to_epsg()
+G.graph = {
+    "crs": f"epsg:{epsg}"
+    }
+
+# Create node attributes
+nodes_attributes = (
+    {"x": x, "y": y}
+    for x, y in zip(
+            unions["geometry"].x,
+            unions["geometry"].y
+            )
+    )
 
 # Add nodes from unions (points)
 print("Adding nodes...")
 G.add_nodes_from(
-    tqdm(unions["ID_UNION"],
-         total = len(unions))
+    tqdm(
+        zip(
+            unions["ID_UNION"],
+            nodes_attributes
+            ),
+         total = len(unions)
+         )
     )
 # Check nodes
 print(f"Nodes: {G.order():,}")
 
+# Create edge attributes
+edge_attributes = (
+    {"name": n,
+     "length": l,
+     "geometry": g}
+    for n, l, g in zip(
+            roads["Nombre"],
+            roads["Longitud"],
+            roads["geometry"]
+            )
+    )
 # Create edges
 edges = list(
     zip(
         roads["UNION_INI"],
         roads["UNION_FIN"],
-        [{"idx": i} for i in roads["ID_RED"]]
+        edge_attributes
         )
     )
 mask = roads["CIRCULA"] == "Dos sentidos"
+# Create edge attributes
+edge_attributes = (
+    {"name": n,
+     "length": l,
+     "geometry": g}
+    for n, l, g in zip(
+            roads.loc[mask,"Nombre"],
+            roads.loc[mask,"Longitud"],
+            roads.loc[mask,"geometry"]
+            )
+    )
 edges += list(
     zip(
         roads.loc[mask, "UNION_FIN"],
         roads.loc[mask, "UNION_INI"],
-        [{"idx": i} for i in roads.loc[mask, "ID_RED"]]
+        edge_attributes
         )
     )
 
