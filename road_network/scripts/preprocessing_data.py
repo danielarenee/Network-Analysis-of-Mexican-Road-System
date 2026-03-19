@@ -58,6 +58,7 @@ rnc_union.to_file(DATA_DIR + "\\temp\\unions.gpkg",
 del rnc_union
 
 # Read roads (lines)
+# https://www.inegi.org.mx/contenidos/productos/prod_serv/contenidos/espanol/bvinegi/productos/geografia/caminos/2025/794551163030_gpk.zip
 rnc_roads = gpd.read_file(DATA_DIR + "\\temp\\rnc2025.gpkg",
                     layer = "red_vial")
 # Filter
