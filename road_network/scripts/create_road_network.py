@@ -60,7 +60,7 @@ G.add_edges_from(
 print(f"Edges: {G.size():,}")
 
 # Save graph
-with open(DATA_DIR + "\\data\\road_network.pkl", "wb") as f:
+with open(DATA_DIR + "\\temp\\road_network.pkl", "wb") as f:
     pickle.dump(
         G, f,
         protocol = pickle.HIGHEST_PROTOCOL
