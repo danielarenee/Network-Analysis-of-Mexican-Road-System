@@ -1,0 +1,27 @@
+Identifier: 
+
+Title: Red Nacional de Caminos 2025.
+
+Description: INEGI. Red Nacional de Caminos. SNIEG. Información de Interés Nacional. Proporcionar a las Unidades del Estado y a la ciudadanía una red única de transporte terrestre que integre las carreteras, vialidades y caminos del país, modelada y estructurada con las especificaciones técnicas para Sistemas Inteligentes de Transportes, para determinar rutas en sistemas de información geográfica orientado al análisis de redes de transporte, manteniendo la conectividad con servicios de interconexión como aeropuertos, puertos, estaciones de ferrocarril, así como diversos destinos entre localidades urbanas y rurales además de sitios de interés, entre otros.
+
+Modified: 2025-12-15
+
+Publisher: Instituto Nacional de Estadística y Geografía, INEGI
+
+Mbox: atencion.usuarios@inegi.org.mx
+
+License: Términos de Libre Uso de la Información del INEGI https://www.inegi.org.mx/inegi/terminos.html
+                                                           
+DataDictionary: https://sinegi.page.link/12VE
+
+Keyword: "camino", "carretera", "localidad", "número de carretera", "ruta", "ruteo", "sitio de interés", "terracería", "vialidad", "vías de transporte", "grafo"
+
+ContactPoint: Mtro. J. Armando Aguiar Rodríguez, 800 111 4634 
+
+Temporal: 2012-2025
+
+Spatial: Estados Unidos Mexicanos
+
+AccrualPeriodicity: Anualmente
+
+Distribution: https://sinegi.page.link/1R7x
