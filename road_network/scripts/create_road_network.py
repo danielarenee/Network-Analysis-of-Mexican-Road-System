@@ -54,16 +54,16 @@ G.add_nodes_from(
 print(f"Nodes: {G.order():,}")
 
 # Create edge attributes
-edge_attributes = (
+edge_attributes = [
     {"name": n,
      "length": l,
      "geometry": g}
     for n, l, g in zip(
-            roads["Nombre"],
-            roads["Longitud"],
+            roads["NOMBRE"],
+            roads["LONGITUD"],
             roads["geometry"]
             )
-    )
+    ]
 # Create edges
 edges = list(
     zip(
@@ -74,16 +74,16 @@ edges = list(
     )
 mask = roads["CIRCULA"] == "Dos sentidos"
 # Create edge attributes
-edge_attributes = (
+edge_attributes += [
     {"name": n,
      "length": l,
      "geometry": g}
     for n, l, g in zip(
-            roads.loc[mask,"Nombre"],
-            roads.loc[mask,"Longitud"],
+            roads.loc[mask,"NOMBRE"],
+            roads.loc[mask,"LONGITUD"],
             roads.loc[mask,"geometry"]
             )
-    )
+    ]
 edges += list(
     zip(
         roads.loc[mask, "UNION_FIN"],
@@ -91,6 +91,7 @@ edges += list(
         edge_attributes
         )
     )
+
 
 # Add edges from roads (lines)
 print("Adding edges...")
