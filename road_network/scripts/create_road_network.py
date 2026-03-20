@@ -32,10 +32,11 @@ G.graph = {
 
 # Create node attributes
 nodes_attributes = (
-    {"x": x, "y": y}
-    for x, y in zip(
+    {"x": x, "y": y, "id_polygon": idx}
+    for x, y, idx in zip(
             unions["geometry"].x,
-            unions["geometry"].y
+            unions["geometry"].y,
+            unions["id_convex"]
             )
     )
 
