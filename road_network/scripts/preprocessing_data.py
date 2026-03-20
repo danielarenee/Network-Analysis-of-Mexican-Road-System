@@ -15,6 +15,7 @@ DATA_DIR = str(BASE_DIR)
 
 # Columns to select from the join file
 columns_union = ["ID_UNION", "geometry"]
+columns_cities = ["id_convex", "geometry"]
 
 # Features fo filter (roads)
 # COND_PAV: ['N/A', 'Con pavimento', 'Sin pavimento']
@@ -50,6 +51,20 @@ rnc_union = gpd.read_file(DATA_DIR + "\\temp\\rnc2025.gpkg",
 rnc_union = rnc_union[columns_union]
 # Set crs
 rnc_union = rnc_union.to_crs(epsg=epsg)
+
+# Read city boundaries
+cities = gpd.read_file(DATA_DIR + "\\data\\LocalitiesGrouped_2020_data.gpkg")
+cities["id_convex"] = cities["id_convex"].astype(int)
+cities = cities[columns_cities]
+
+rnc_union = gpd.sjoin(
+    rnc_union,
+    cities,
+    how="left",
+    predicate="within"
+    )
+rnc_union = rnc_union.drop(columns="index_right")
+
 # Save file
 rnc_union.to_file(DATA_DIR + "\\temp\\unions.gpkg",
                   driver = "GPKG",
@@ -57,6 +72,7 @@ rnc_union.to_file(DATA_DIR + "\\temp\\unions.gpkg",
 # Delete file
 del rnc_union
 
+#%%%
 # Read roads (lines)
 # https://www.inegi.org.mx/contenidos/productos/prod_serv/contenidos/espanol/bvinegi/productos/geografia/caminos/2025/794551163030_gpk.zip
 rnc_roads = gpd.read_file(DATA_DIR + "\\temp\\rnc2025.gpkg",
@@ -73,3 +89,4 @@ rnc_roads = rnc_roads.to_crs(epsg=epsg)
 rnc_roads.to_file(DATA_DIR + "\\temp\\roads.gpkg",
                   driver = "GPKG",
                   index = False)
+del rnc_roads
