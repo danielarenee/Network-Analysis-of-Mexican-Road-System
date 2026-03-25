@@ -1,7 +1,7 @@
 ###########
-# LIBRARIES
+# PACKAGES
 ###########
-# Import libraries
+# Import packages
 import geopandas as gpd
 
 from pathlib import Path
