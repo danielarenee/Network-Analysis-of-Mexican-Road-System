@@ -11,6 +11,8 @@ as NetworkX graphs. It includes functionality for:
 
 """
 
+import heapq
+
 import networkx as nx
 from math import sqrt
 from shapely.geometry import LineString
@@ -559,3 +561,83 @@ def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
                     pass
 
     return distance_matrix, node_to_region
+
+
+def dijkstra_heap(graph, source, target, weight="length"):
+    """
+    Dijkstra's shortest path algorithm using a binary min-heap (heapq)
+
+    Parameters
+    ----------
+    graph : networkx.Graph 
+        Road network with numeric edge weight attribute.
+    source : hashable
+        Starting node ID.
+    target : hashable
+        Destination node ID.
+    weight : str, optional
+        Edge attribute to use as cost. Default 'length'.
+
+    Returns
+    -------
+    distance : float
+        Total cost of the shortest path.
+    path : list
+        Ordered list of node IDs from source to target.
+
+    Raises
+    ------
+    nx.NetworkXNoPath
+        If no path exists between source and target.
+    KeyError
+        If source or target are not in the graph.
+    """
+    is_multi = graph.is_multigraph()
+
+    dist = {source: 0.0} # dist to source is 0
+    prev = {source: None}
+
+    visited = set() # initialize S 
+    heap = [(0.0, source)] # initialize Q 
+
+    while heap: # while Q =/ empty 
+        d, u = heapq.heappop(heap) # extract node u with min dist until now
+
+        # since heapq has no way to perform "decrease key" it simply inserts the same
+        # node with a smaller distance
+        if u in visited:
+            continue # ignores the versions of (u,d) with longer distance d
+        visited.add(u) 
+
+        if u == target:
+            break
+
+        for v, edge_data in graph[u].items(): # for each neighbor v of u 
+            # get the length u -> v 
+            if is_multi:
+                # edge_data is {key: attr_dict}
+                w = min( # looks for "lenght" key 
+                    attrs.get(weight, float("inf")) # inf if doesnt find it
+                    for attrs in edge_data.values() 
+                )
+            else: 
+                w = edge_data.get(weight, float("inf"))
+
+            new_dist = d + w # cumulative dist 
+            if new_dist < dist.get(v, float("inf")):
+                dist[v] = new_dist
+                prev[v] = u
+                heapq.heappush(heap, (new_dist, v)) # push to queue
+
+    if target not in dist:
+        raise nx.NetworkXNoPath(f"No path between {source} and {target}.")
+
+    # reconstruct path by walking predecessors back from target
+    path = []
+    node = target
+    while node is not None:
+        path.append(node)
+        node = prev[node]
+    path.reverse()
+
+    return dist[target], path
