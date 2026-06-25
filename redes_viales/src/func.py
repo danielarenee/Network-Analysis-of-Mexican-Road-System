@@ -12,6 +12,7 @@ as NetworkX graphs. It includes functionality for:
 """
 
 import heapq
+import time
 
 import networkx as nx
 from math import sqrt
@@ -117,22 +118,33 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
         grafo_clique.add_node(nodo, **graph.nodes[nodo])
 
     # Step 5: Connect each pair of boundary nodes using A* shortest path
-    for i in range(len(frontera_lista)):
-        for j in range(i + 1, len(frontera_lista)):
+    n = len(frontera_lista)
+    total_pairs = n * (n - 1) // 2
+    pair_count = 0
+    t0_clique = time.time()
+    t_last_clique = t0_clique
+    for i in range(n):
+        for j in range(i + 1, n):
             u = frontera_lista[i]
             v = frontera_lista[j]
             try:
-                # Find shortest path using A* with Euclidean heuristic
-                camino = nx.astar_path(subgrafo, u, v, heuristic = lambda a, b: euclidean_heuristic(a, b, subgrafo))
-                # Calculate total path weight (sum of Euclidean distances)
+                camino = nx.astar_path(subgrafo, u, v, heuristic=lambda a, b: euclidean_heuristic(a, b, subgrafo))
                 peso = sum(
                     euclidean_heuristic(camino[k], camino[k + 1], subgrafo)
                     for k in range(len(camino) - 1)
                 )
                 grafo_clique.add_edge(u, v, weight=peso, path=camino)
             except nx.NetworkXNoPath:
-                # Skip if no path exists between boundary nodes
                 continue
+            pair_count += 1
+            now = time.time()
+            if total_pairs > 50 and (now - t_last_clique >= 5 or pair_count == total_pairs):
+                elapsed = now - t0_clique
+                rate = pair_count / elapsed if elapsed > 0 else 0
+                eta = (total_pairs - pair_count) / rate if rate > 0 else float("inf")
+                print(f"      loc={cvgeo_target}  pairs {pair_count}/{total_pairs}  "
+                      f"elapsed={elapsed:.0f}s  rate={rate:.1f} pair/s  ETA={eta:.0f}s", flush=True)
+                t_last_clique = now
 
     return grafo_clique
 
@@ -527,11 +539,23 @@ def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
     distance_matrix = {}
 
     # 4. Compute shortest paths between boundary nodes of diff regions
-    for source_node in all_boundary_nodes:
+    total_sources = len(all_boundary_nodes)
+    t0 = time.time()
+    t_last = t0
+    for i, source_node in enumerate(all_boundary_nodes, 1):
         # Get the region of the source node
         source_region = node_to_region[source_node]
         # Initialize dict for this source node
         distance_matrix[source_node] = {}
+
+        now = time.time()
+        if now - t_last >= 10 or i == total_sources:
+            elapsed = now - t0
+            rate = i / elapsed if elapsed > 0 else 0
+            eta = (total_sources - i) / rate if rate > 0 else float("inf")
+            print(f"    [distance matrix] {i:,}/{total_sources:,} nodes  "
+                  f"elapsed={elapsed:.0f}s  rate={rate:.1f} node/s  ETA={eta:.0f}s", flush=True)
+            t_last = now
 
         # Iterate through all other boundary nodes
         for target_node in all_boundary_nodes:
