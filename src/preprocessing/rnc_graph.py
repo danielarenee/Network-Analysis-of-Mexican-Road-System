@@ -5,8 +5,16 @@ import fiona
 from datetime import datetime
 import numpy as np
 
-#%% 1. EXPLORAR EL GPKG
-ruta_gpkg = '/Users/danielarenee/Desktop/honores 2/rnc_data/conjunto_de_datos/rnc2025.gpkg'
+from pathlib import Path
+
+# Get project root directory
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+ruta_gpkg_relative = BASE_DIR / "data" / "raw" / "rnc2025.gpkg"
+if ruta_gpkg_relative.exists():
+    ruta_gpkg = str(ruta_gpkg_relative)
+else:
+    ruta_gpkg = '/Users/danielarenee/Desktop/honores 2/rnc_data/conjunto_de_datos/rnc2025.gpkg'
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}") # llevar track del proceso con timestamps
@@ -112,13 +120,15 @@ log("-> Paso 3 completado!")
 # 5.2 GUARDAR COMO GPKG
 
 log("Guardando edges_final...")
+output_path = BASE_DIR / "data" / "processed" / "edges_final.gpkg"
+output_path.parent.mkdir(parents=True, exist_ok=True)
 edges_final.to_file(
-    'edges_final.gpkg',
+    str(output_path),
     layer='edges',
     driver='GPKG'
 )
 
-log("-> edges_final.gpkg guardado")
+log(f"-> {output_path} guardado")
 
 #%%
 

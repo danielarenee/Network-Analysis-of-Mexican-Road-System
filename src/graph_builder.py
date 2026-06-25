@@ -14,13 +14,12 @@ from pathlib import Path
 ###########
 # Set absolute path
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = str(BASE_DIR)
 
 
 ###########
 # FUNCTIONS
 ###########
-def create_road_network(roads, unions, save_folder = "temp"):
+def create_road_network(roads, unions, save_path):
     # Create digraph
     G = nx.MultiDiGraph()
     
@@ -103,7 +102,8 @@ def create_road_network(roads, unions, save_folder = "temp"):
     print(f"Edges: {G.size():,}")
     
     # Save graph
-    with open(DATA_DIR + f"\\{save_folder}\\road_network.pkl", "wb") as f:
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(save_path, "wb") as f:
         pickle.dump(
             G, f,
             protocol = pickle.HIGHEST_PROTOCOL
@@ -115,12 +115,15 @@ def create_road_network(roads, unions, save_folder = "temp"):
 # MAIN
 ###########
 
-# folder = "temp"
-folder = "test"
+# Paths of roads and unions
+unions_path = BASE_DIR / "data" / "processed" / "unions.gpkg"
+roads_path = BASE_DIR / "data" / "processed" / "roads.gpkg"
+graph_save_path = BASE_DIR / "data" / "processed" / "road_network.pkl"
 
 # Import .gpkg of roads and unions
-unions = gpd.read_file(DATA_DIR + f"\\{folder}\\unions.gpkg")
-roads = gpd.read_file(DATA_DIR + f"\\{folder}\\roads.gpkg")
+unions = gpd.read_file(unions_path)
+roads = gpd.read_file(roads_path)
 
 # Create road network
-create_road_network(roads, unions, save_folder = folder)
+create_road_network(roads, unions, save_path = graph_save_path)
+

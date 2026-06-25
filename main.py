@@ -37,26 +37,28 @@ from shapely.geometry import Point
 
 import time
 
-import redes_viales.src.func as fc
+import src.utils as fc
 
 #%%
+
+from pathlib import Path
+
+# Get project root directory
+BASE_DIR = Path(__file__).resolve().parent
 
 # CONSTANTS
 
 SOURCE = "inegi"  # "osmnx" or "inegi"
 
 #  OSMnx settings 
-SHAPEFILE_PATH = "/Users/danielarenee/Desktop/honores/redes_viales/Data/shp/27l.shp"
+SHAPEFILE_PATH = BASE_DIR / "data" / "raw" / "shp" / "27l.shp"
 CENTER_LAT = 17.930714
 CENTER_LON = -93.507545
 NETWORK_RADIUS = 7000  # meters
 
 # INEGI settings 
-INEGI_GRAPH_PATH = (
-    "/Users/danielarenee/PycharmProjects/"
-    "Network-Analysis-of-Mexican-Road-System/"
-    "road_network/test/road_network.pkl"
-)
+INEGI_GRAPH_PATH = BASE_DIR / "data" / "processed" / "road_network.pkl"
+
 
 #%%
 # ============================================================================
