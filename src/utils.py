@@ -7,6 +7,7 @@ as NetworkX graphs. It includes functionality for:
 - Building clique graphs from locality boundary nodes
 - Pruning graphs by removing low-degree vertices
 - Simplifying multiple edges by keeping the shortest one
+- Dijkstra algorithm heap implementation
 
 
 """
@@ -94,12 +95,10 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
       nodes in the path
     """
     # Step 1: Filter nodes belonging to the target locality
-    nodos_localidad = []
-
-    for node_id, data in graph.nodes(data=True):
-        cvgeo = data.get("CVEGEO")
-        if cvgeo == cvgeo_target:
-            nodos_localidad.append(node_id)
+    nodos_localidad = [
+        node_id for node_id, data in graph.nodes(data=True)
+        if data.get("CVEGEO") == cvgeo_target
+    ]
 
     # Step 2: Extract induced subgraph for this locality
     subgrafo = graph.subgraph(nodos_localidad).copy()
@@ -113,29 +112,35 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
 
     # Step 4: Create new clique graph with boundary nodes
     grafo_clique = nx.Graph()
-    for nodo in frontera:
-        # Add boundary nodes with their original attributes
-        grafo_clique.add_node(nodo, **graph.nodes[nodo])
+    # Add boundary nodes with their original attributes in bulk
+    grafo_clique.add_nodes_from((nodo, graph.nodes[nodo]) for nodo in frontera)
 
-    # Step 5: Connect each pair of boundary nodes using A* shortest path
+    # Step 5: Connect each pair of boundary nodes using single-source shortest path (BFS)
     n = len(frontera_lista)
     total_pairs = n * (n - 1) // 2
     pair_count = 0
     t0_clique = time.time()
     t_last_clique = t0_clique
+    
+    edges_to_add = []
     for i in range(n):
+        u = frontera_lista[i]
+        # Compute shortest paths from u to all reachable nodes in subgrafo using BFS
+        try:
+            paths = nx.single_source_shortest_path(subgrafo, u)
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            paths = {}
+
         for j in range(i + 1, n):
-            u = frontera_lista[i]
             v = frontera_lista[j]
-            try:
-                camino = nx.astar_path(subgrafo, u, v, heuristic=lambda a, b: euclidean_heuristic(a, b, subgrafo))
+            if v in paths:
+                camino = paths[v]
                 peso = sum(
                     euclidean_heuristic(camino[k], camino[k + 1], subgrafo)
                     for k in range(len(camino) - 1)
                 )
-                grafo_clique.add_edge(u, v, weight=peso, path=camino)
-            except nx.NetworkXNoPath:
-                continue
+                edges_to_add.append((u, v, {'weight': peso, 'path': camino}))
+            
             pair_count += 1
             now = time.time()
             if total_pairs > 50 and (now - t_last_clique >= 5 or pair_count == total_pairs):
@@ -145,6 +150,8 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
                 print(f"      loc={cvgeo_target}  pairs {pair_count}/{total_pairs}  "
                       f"elapsed={elapsed:.0f}s  rate={rate:.1f} pair/s  ETA={eta:.0f}s", flush=True)
                 t_last_clique = now
+
+    grafo_clique.add_edges_from(edges_to_add)
 
     return grafo_clique
 
@@ -374,54 +381,28 @@ def simplificar_aristas_multiples(graph, weight_attr='length'):
     # {(u, v): {'count': total_edges, 'removed': num_removed, 'kept_weight': min_weight}}
     multiple_edges_info = {}
 
-    # Set to track which (u, v) pairs are already processed
-    processed_pairs = set()
-
-    # Iterate through edges in the graph
-    # where key is the node's identifier and data is a dict of its attributes
-
-    # using list() because the graph will be modified during iteration
-    for u, v, key, data in list(graph_simplified.edges(keys=True, data=True)):
-        pair = (u, v)
-
-        # skip if already processed
-        if pair in processed_pairs:
-            continue
-
-        # get all edges from u to v
-        if graph_simplified.has_edge(u, v):
-            edges = graph_simplified[u][v] # get info
-
-            # only process if there are multiple edges
+    # Iterate through adjacency structure directly to avoid expensive edge iteration & lookups
+    for u, neighbors in list(graph_simplified.adj.items()):
+        for v, edges in list(neighbors.items()):
             if len(edges) > 1:
-                # find edge with minimum weight
-                min_key = None           # to store the key of the shortest edge
-                min_weight = float('inf')  # start with infinity
-
-                # iterate all parallel edges
-                for edge_key, edge_data in edges.items():
-                    # get weight (default: inf)
-                    weight = edge_data.get(weight_attr, float('inf'))
-
-                    if weight < min_weight: # update
-                        min_weight = weight
-                        min_key = edge_key
+                # Find the key of the edge with the minimum weight
+                min_key = min(
+                    edges.keys(),
+                    key=lambda k: edges[k].get(weight_attr, float('inf'))
+                )
+                min_weight = edges[min_key].get(weight_attr, float('inf'))
 
                 # Store info in dict
-                multiple_edges_info[pair] = {
+                multiple_edges_info[(u, v)] = {
                     'count': len(edges),           # number of parallel edges
                     'removed': len(edges) - 1,     # number of removed edges
                     'kept_weight': min_weight      # weight of the edge we're keeping
                 }
 
-                # remove all edges except the one with min weight
-                # we use a list since the graph will be modified during iteration
+                # Remove all edges except the one with min weight
                 for edge_key in list(edges.keys()):
-                    if edge_key != min_key: # using the key
+                    if edge_key != min_key:
                         graph_simplified.remove_edge(u, v, key=edge_key)
-
-        # mark pair as processed
-        processed_pairs.add(pair)
 
     return graph_original, graph_simplified, multiple_edges_info
 
@@ -557,32 +538,18 @@ def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
                   f"elapsed={elapsed:.0f}s  rate={rate:.1f} node/s  ETA={eta:.0f}s", flush=True)
             t_last = now
 
-        # Iterate through all other boundary nodes
+        # Compute shortest paths from source_node to all other nodes in the graph
+        try:
+            lengths = nx.single_source_dijkstra_path_length(graph, source_node, weight='length')
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
+            lengths = {}
+
+        # Filter target nodes that are in different regions and reachable
         for target_node in all_boundary_nodes:
-            if source_node == target_node: # skip if same node
-                continue
-
-            # Get the region of the target node
-            target_region = node_to_region[target_node]
-
-            # Only if regions are different
-            if source_region != target_region:
-                try:
-                    # shortest path using Dijkstra's algorithm
-                    distance = nx.shortest_path_length(
-                        graph,
-                        source=source_node,
-                        target=target_node,
-                        weight='length' # length as weight
-                    )
-
-                    # store distance
-                    # dict[source_id, dict[target_id, distance]]
-                    distance_matrix[source_node][target_node] = distance
-
-                except nx.NetworkXNoPath:
-                    # No path between these nodes
-                    pass
+            if source_node != target_node and source_region != node_to_region[target_node]:
+                dist = lengths.get(target_node)
+                if dist is not None:
+                    distance_matrix[source_node][target_node] = dist
 
     return distance_matrix, node_to_region
 

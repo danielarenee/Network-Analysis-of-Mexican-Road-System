@@ -24,16 +24,14 @@ def log(msg):
 
 log("Paso 1: Cargando las capas...")
 
-# Cargar union y redvial
-union = gpd.read_file(ruta_gpkg, layer='union_p')
-redvial = gpd.read_file(ruta_gpkg, layer='red_vial')
-
 # mantener solo columnas esenciales
 columnas_a_mantener = [
     'ID_RED', 'TIPO_VIAL', 'CIRCULA',
     'UNION_INI', 'UNION_FIN', 'LONGITUD', 'geometry'
 ]
-redvial = redvial[columnas_a_mantener].copy()
+
+# Cargar redvial con columnas especificadas
+redvial = gpd.read_file(ruta_gpkg, layer='red_vial', columns=columnas_a_mantener)
 
 log("-> Capas listas!")
 
