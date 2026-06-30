@@ -19,6 +19,7 @@ import networkx as nx
 from math import sqrt
 from shapely.geometry import LineString
 from collections import deque
+from tqdm import tqdm
 
 
 def euclidean_heuristic(u, v, graph):
@@ -49,7 +50,7 @@ def euclidean_heuristic(u, v, graph):
     x2, y2 = graph.nodes[v]['x'], graph.nodes[v]['y']
     return sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
-def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
+def construir_clique_localidad(graph, cvgeo_target, nodos_frontera, nodos_localidad=None):
     """
     Build a clique graph for a specific locality based on boundary nodes.
 
@@ -76,6 +77,8 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
     nodos_frontera : dict
         Dictionary mapping CVEGEO codes to sets of boundary node IDs.
         Format: {cvgeo: {node_id1, node_id2, ...}}
+    nodos_localidad : list, optional
+        Pre-filtered list of node IDs belonging to the target locality.
 
     Returns
     -------
@@ -95,10 +98,11 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
       nodes in the path
     """
     # Step 1: Filter nodes belonging to the target locality
-    nodos_localidad = [
-        node_id for node_id, data in graph.nodes(data=True)
-        if data.get("CVEGEO") == cvgeo_target
-    ]
+    if nodos_localidad is None:
+        nodos_localidad = [
+            node_id for node_id, data in graph.nodes(data=True)
+            if data.get("CVEGEO") == cvgeo_target
+        ]
 
     # Step 2: Extract induced subgraph for this locality
     subgrafo = graph.subgraph(nodos_localidad).copy()
@@ -118,38 +122,35 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera):
     # Step 5: Connect each pair of boundary nodes using single-source shortest path (BFS)
     n = len(frontera_lista)
     total_pairs = n * (n - 1) // 2
-    pair_count = 0
-    t0_clique = time.time()
-    t_last_clique = t0_clique
+    
+    # Cache node coordinates to speed up distance calculations
+    coords = {node_id: (data["x"], data["y"]) for node_id, data in subgrafo.nodes(data=True)}
     
     edges_to_add = []
-    for i in range(n):
-        u = frontera_lista[i]
-        # Compute shortest paths from u to all reachable nodes in subgrafo using BFS
-        try:
-            paths = nx.single_source_shortest_path(subgrafo, u)
-        except (nx.NetworkXNoPath, nx.NodeNotFound):
-            paths = {}
+    with tqdm(total=total_pairs, desc=f"      loc={cvgeo_target}", leave=False, disable=total_pairs <= 50) as pbar:
+        for i in range(n):
+            u = frontera_lista[i]
+            # Compute shortest paths from u to all reachable nodes in subgrafo using BFS
+            try:
+                paths = nx.single_source_shortest_path(subgrafo, u)
+            except (nx.NetworkXNoPath, nx.NodeNotFound):
+                paths = {}
 
-        for j in range(i + 1, n):
-            v = frontera_lista[j]
-            if v in paths:
-                camino = paths[v]
-                peso = sum(
-                    euclidean_heuristic(camino[k], camino[k + 1], subgrafo)
-                    for k in range(len(camino) - 1)
-                )
-                edges_to_add.append((u, v, {'weight': peso, 'path': camino}))
+            for j in range(i + 1, n):
+                v = frontera_lista[j]
+                if v in paths:
+                    camino = paths[v]
+                    peso = 0.0
+                    curr_node = camino[0]
+                    curr_x, curr_y = coords[curr_node]
+                    for next_node in camino[1:]:
+                        next_x, next_y = coords[next_node]
+                        peso += sqrt((curr_x - next_x)**2 + (curr_y - next_y)**2)
+                        curr_node = next_node
+                        curr_x, curr_y = next_x, next_y
+                    edges_to_add.append((u, v, {'weight': peso, 'path': camino}))
             
-            pair_count += 1
-            now = time.time()
-            if total_pairs > 50 and (now - t_last_clique >= 5 or pair_count == total_pairs):
-                elapsed = now - t0_clique
-                rate = pair_count / elapsed if elapsed > 0 else 0
-                eta = (total_pairs - pair_count) / rate if rate > 0 else float("inf")
-                print(f"      loc={cvgeo_target}  pairs {pair_count}/{total_pairs}  "
-                      f"elapsed={elapsed:.0f}s  rate={rate:.1f} pair/s  ETA={eta:.0f}s", flush=True)
-                t_last_clique = now
+            pbar.update(n - 1 - i)
 
     grafo_clique.add_edges_from(edges_to_add)
 
@@ -289,18 +290,22 @@ def podar_grado_2(graph):
                 continue
             u1, u2 = nbrs
 
-            # Get all incident edges to v (with attributes)
-            # Concatenate in/out edges to handle directed graphs
-            incident_edges = list(H.out_edges(v, keys=True, data=True)) + \
-                             list(H.in_edges(v, keys=True, data=True))
+            # Direct dictionary lookups to find incident edges between v and u1 / u2
+            edges_v_u1 = []
+            if u1 in H[v]:
+                edges_v_u1.extend(H[v][u1].values())
+            if v in H[u1]:
+                edges_v_u1.extend(H[u1][v].values())
 
-            # Filter edges connecting to each neighbor
-            edges_v_u1 = [e_data for (a, b, k, e_data) in incident_edges if (a == u1 or b == u1)]
-            edges_v_u2 = [e_data for (a, b, k, e_data) in incident_edges if (a == u2 or b == u2)]
+            edges_v_u2 = []
+            if u2 in H[v]:
+                edges_v_u2.extend(H[v][u2].values())
+            if v in H[u2]:
+                edges_v_u2.extend(H[u2][v].values())
 
             # Select shortest edge to each neighbor
-            edge1 = min(edges_v_u1, key=lambda e_data: e_data.get("length"))
-            edge2 = min(edges_v_u2, key=lambda e_data: e_data.get("length"))
+            edge1 = min(edges_v_u1, key=lambda e_data: e_data.get("length", float('inf')))
+            edge2 = min(edges_v_u2, key=lambda e_data: e_data.get("length", float('inf')))
 
             # Extract length and geometry from edges
             len1 = edge1.get("length")
@@ -520,23 +525,11 @@ def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
     distance_matrix = {}
 
     # 4. Compute shortest paths between boundary nodes of diff regions
-    total_sources = len(all_boundary_nodes)
-    t0 = time.time()
-    t_last = t0
-    for i, source_node in enumerate(all_boundary_nodes, 1):
+    for source_node in tqdm(all_boundary_nodes, desc="Computing distance matrix", unit="node"):
         # Get the region of the source node
         source_region = node_to_region[source_node]
         # Initialize dict for this source node
         distance_matrix[source_node] = {}
-
-        now = time.time()
-        if now - t_last >= 10 or i == total_sources:
-            elapsed = now - t0
-            rate = i / elapsed if elapsed > 0 else 0
-            eta = (total_sources - i) / rate if rate > 0 else float("inf")
-            print(f"    [distance matrix] {i:,}/{total_sources:,} nodes  "
-                  f"elapsed={elapsed:.0f}s  rate={rate:.1f} node/s  ETA={eta:.0f}s", flush=True)
-            t_last = now
 
         # Compute shortest paths from source_node to all other nodes in the graph
         try:
@@ -545,8 +538,10 @@ def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
             lengths = {}
 
         # Filter target nodes that are in different regions and reachable
-        for target_node in all_boundary_nodes:
-            if source_node != target_node and source_region != node_to_region[target_node]:
+        for r_code, nodes in boundary_nodes_by_locality.items():
+            if r_code == source_region:
+                continue
+            for target_node in nodes:
                 dist = lengths.get(target_node)
                 if dist is not None:
                     distance_matrix[source_node][target_node] = dist

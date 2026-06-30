@@ -36,6 +36,7 @@ from scipy.spatial import Delaunay
 from shapely.geometry import Point
 
 import time
+from tqdm import tqdm
 
 import src.utils as fc
 
@@ -94,6 +95,7 @@ if SOURCE == "osmnx":
 
     # write CVEGEO back into the graph as a node attribute
     cvegeo_map = gdf_nodes_labeled.set_index("osmid")["CVEGEO"].to_dict()
+    cvegeo_map = {k: (None if pd.isna(v) else v) for k, v in cvegeo_map.items()}
     nx.set_node_attributes(graph, cvegeo_map, name="CVEGEO")
 
     # visualization
@@ -136,6 +138,15 @@ elif SOURCE == "inegi":
     df_nodes["geometry"] = gpd.points_from_xy(df_nodes["x"], df_nodes["y"])
     gdf_nodes_labeled = gpd.GeoDataFrame(df_nodes, geometry="geometry", crs=CRS)
 
+    #  Visualization for INEGI Source 
+    fig, ax = ox.plot_graph(graph, show=False, close=False)
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+    gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="tab20", markersize=1)
+    ax.set_title("INEGI - Initial Road Network", fontsize=16, color="white")
+    plt.show()
+
+
 else:
     raise ValueError(f"Unknown SOURCE: {SOURCE!r}. Use 'osmnx' or 'inegi'.")
 
@@ -157,12 +168,12 @@ boundary_nodes_by_locality: dict[str, set[int]] = defaultdict(set)
 
 for node in graph.nodes:
     node_loc = cvegeo_map.get(node)
-    if pd.isna(node_loc):
+    if node_loc is None:
         continue
 
     for neighbor in graph.neighbors(node):
         neighbor_loc = cvegeo_map.get(neighbor)
-        if pd.isna(neighbor_loc) or neighbor_loc != node_loc:
+        if neighbor_loc is None or neighbor_loc != node_loc:
             boundary_nodes_by_locality[node_loc].add(node)
             break
 
@@ -187,19 +198,24 @@ print(f"[3/5] Building locality cliques (this may take several minutes)...")
 t0 = time.time()
 
 locality_cliques = []
-total_locs = len(boundary_nodes_by_locality)
-t_last = time.time()
-for i, loc in enumerate(boundary_nodes_by_locality, 1):
-    locality_cliques.append(fc.construir_clique_localidad(graph, loc, boundary_nodes_by_locality))
-    now = time.time()
-    if now - t_last >= 5 or i == total_locs:
-        n_frontier = len(boundary_nodes_by_locality[loc])
-        elapsed = now - t0
-        rate = i / elapsed if elapsed > 0 else 0
-        eta = (total_locs - i) / rate if rate > 0 else float("inf")
-        print(f"    [{i:,}/{total_locs:,}] loc={loc}  boundary_nodes={n_frontier}  "
-              f"elapsed={elapsed:.0f}s  rate={rate:.1f} loc/s  ETA={eta:.0f}s", flush=True)
-        t_last = now
+
+# Pre-group nodes by locality to optimize clique construction
+nodes_by_locality = defaultdict(list)
+for node_id, data in graph.nodes(data=True):
+    loc = data.get("CVEGEO")
+    if loc is not None:
+        nodes_by_locality[loc].append(node_id)
+
+pbar = tqdm(boundary_nodes_by_locality.items(), desc="Building locality cliques")
+for loc, frontier_nodes in pbar:
+    n_frontier = len(frontier_nodes)
+    pbar.set_postfix(loc=loc, boundary_nodes=n_frontier)
+    loc_nodes = nodes_by_locality.get(loc, [])
+    locality_cliques.append(
+        fc.construir_clique_localidad(
+            graph, loc, boundary_nodes_by_locality, nodos_localidad=loc_nodes
+        )
+    )
 reduced_graph = nx.compose_all(locality_cliques)
 
 print(f"    Reduced graph: {reduced_graph.number_of_nodes():,} nodes, {reduced_graph.number_of_edges():,} edges ({time.time()-t0:.1f}s)")
@@ -301,6 +317,7 @@ ax.set_title(
 )
 plt.show()
 
+"""
 #%%
 # ============================================================================
 # SECTION 6: INTER-REGION DISTANCE MATRIX
@@ -335,3 +352,15 @@ print(f"\n  First 5 targets from node {first_node} (region {source_region}):")
 for target_node, distance in islice(first_targets.items(), 5):
     target_region = node_to_region[target_node]
     print(f"    -> node {target_node} (region {target_region}): {distance:.2f} m")
+
+
+# Save the computed distance matrix and node mapping to disk
+matrix_save_path = BASE_DIR / "data" / "processed" / "distance_matrix.pkl"
+with open(matrix_save_path, "wb") as f:
+    pickle.dump({
+        "distance_matrix": distance_matrix,
+        "node_to_region": node_to_region
+    }, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+print(f"\n[Saved] Distance matrix saved to {matrix_save_path}")
+"""
