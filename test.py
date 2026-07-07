@@ -70,7 +70,7 @@ for node in graph.nodes:
             boundary_nodes_by_locality[node_loc].add(node)
             break
 
-# Convert back to plain dict if fc.construir_clique_localidad expects one
+# Convert back to plain dict if fc.build_locality_clique expects one
 boundary_nodes_by_locality = dict(boundary_nodes_by_locality)
 
 #%%
@@ -86,7 +86,7 @@ boundary_nodes_by_locality = dict(boundary_nodes_by_locality)
 # ============================================================================
 
 locality_cliques = [
-    fc.construir_clique_localidad(graph, loc, boundary_nodes_by_locality)
+    fc.build_locality_clique(graph, loc, boundary_nodes_by_locality)
     for loc in boundary_nodes_by_locality
 ]
 reduced_graph = nx.compose_all(locality_cliques)

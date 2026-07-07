@@ -50,7 +50,7 @@ def euclidean_heuristic(u, v, graph):
     x2, y2 = graph.nodes[v]['x'], graph.nodes[v]['y']
     return sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
-def construir_clique_localidad(graph, cvgeo_target, nodos_frontera, nodos_localidad=None):
+def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=None):
     """
     Build a clique graph for a specific locality based on boundary nodes.
 
@@ -156,7 +156,7 @@ def construir_clique_localidad(graph, cvgeo_target, nodos_frontera, nodos_locali
 
     return grafo_clique
 
-def podar_grado_1(graph, min_degree=1):
+def prune_degree_1(graph, min_degree=1):
     """
     Iteratively prune leaf nodes (low-degree vertices) from a graph.
 
@@ -217,7 +217,7 @@ def podar_grado_1(graph, min_degree=1):
 
     return H, removed_nodes
 
-def podar_grado_2(graph):
+def prune_degree_2(graph):
     """
     Iteratively prune degree-2 nodes and merge their incident edges.
 
@@ -334,7 +334,7 @@ def podar_grado_2(graph):
 
     return H, removed_nodes
 
-def simplificar_aristas_multiples(graph, weight_attr='length'):
+def simplify_multiple_edges(graph, weight_attr='length'):
     """
     Identify multiple edges between node pairs and keep only the smallest one.
 
@@ -455,9 +455,9 @@ def simplify_iteratively(graph):
         nodes_before = graph.number_of_nodes()
         edges_before = graph.number_of_edges()
 
-        _, graph, _ = simplificar_aristas_multiples(graph)
-        graph, _ = podar_grado_1(graph)
-        graph, _ = podar_grado_2(graph)
+        _, graph, _ = simplify_multiple_edges(graph)
+        graph, _ = prune_degree_1(graph)
+        graph, _ = prune_degree_2(graph)
 
         iteration += 1
 
@@ -627,3 +627,319 @@ def dijkstra_heap(graph, source, target, weight="length"):
     path.reverse()
 
     return dist[target], path
+
+
+def load_and_preprocess_graph(
+    source,
+    shapefile_path=None,
+    center_lat=None,
+    center_lon=None,
+    network_radius=None,
+    inegi_graph_path=None,
+):
+    """
+    Load and preprocess road network graph from OSMnx or INEGI source.
+
+    Parameters
+    ----------
+    source : str
+        The data source, either 'osmnx' or 'inegi'.
+    shapefile_path : Path or str, optional
+        Path to shapefile (required if source is 'osmnx').
+    center_lat : float, optional
+        Latitude of network center (required if source is 'osmnx').
+    center_lon : float, optional
+        Longitude of network center (required if source is 'osmnx').
+    network_radius : float, optional
+        Radius of network in meters (required if source is 'osmnx').
+    inegi_graph_path : Path or str, optional
+        Path to INEGI pickled graph (required if source is 'inegi').
+
+    Returns
+    -------
+    graph : networkx.MultiDiGraph
+        The loaded and processed road network graph.
+    gdf_nodes_labeled : geopandas.GeoDataFrame
+        GeoDataFrame of nodes with spatial/CVEGEO labels.
+    gdf_localities : geopandas.GeoDataFrame or None
+        GeoDataFrame of locality boundaries (None if source is 'inegi').
+    cvegeo_map : dict
+        Mapping from node ID to CVEGEO region ID.
+    crs : str
+        Coordinate Reference System.
+    plot_margin : float
+        Suggested margin for plotting.
+    """
+    import math
+    import pickle
+    import geopandas as gpd
+    import osmnx as ox
+    import pandas as pd
+    import networkx as nx
+
+    if source == "osmnx":
+        crs = "EPSG:4326"
+        plot_margin = 0.002  # degrees
+
+        if shapefile_path is None:
+            raise ValueError("shapefile_path is required for source='osmnx'")
+
+        # load locality polygons
+        gdf_localities = gpd.read_file(shapefile_path).to_crs(crs)
+
+        # download road network with osmnx
+        graph = ox.graph_from_point(
+            (center_lat, center_lon),
+            dist=network_radius,
+            network_type="drive",
+        )
+
+        # convert nodes to geodataframe
+        gdf_nodes, _ = ox.graph_to_gdfs(graph)
+        gdf_nodes = gdf_nodes.reset_index()
+
+        # spatial join to assign each node its locality (CVEGEO)
+        gdf_nodes_labeled = gpd.sjoin(
+            gdf_nodes, gdf_localities, how="left", predicate="within"
+        )
+
+        # write CVEGEO back into the graph as a node attribute
+        cvegeo_map = gdf_nodes_labeled.set_index("osmid")["CVEGEO"].to_dict()
+        cvegeo_map = {k: (None if pd.isna(v) else v) for k, v in cvegeo_map.items()}
+        nx.set_node_attributes(graph, cvegeo_map, name="CVEGEO")
+
+    elif source == "inegi":
+        crs = "EPSG:6372"
+        plot_margin = 500  # meters
+        gdf_localities = None
+
+        if inegi_graph_path is None:
+            raise ValueError("inegi_graph_path is required for source='inegi'")
+
+        with open(inegi_graph_path, "rb") as f:
+            graph = pickle.load(f)
+
+        # rename id_polygon
+        cvegeo_map = {}
+        for node_id, data in graph.nodes(data=True):
+            val = data.get("id_polygon")
+            if val is None or (isinstance(val, float) and math.isnan(val)):
+                graph.nodes[node_id]["CVEGEO"] = None
+                cvegeo_map[node_id] = None
+            else:
+                graph.nodes[node_id]["CVEGEO"] = int(val)
+                cvegeo_map[node_id] = int(val)
+
+        # build gdf_nodes_labeled
+        nodes_data = [
+            {"node_id": node_id, "x": data["x"], "y": data["y"],
+             "CVEGEO": data.get("CVEGEO")}
+            for node_id, data in graph.nodes(data=True)
+        ]
+        df_nodes = pd.DataFrame(nodes_data)
+        df_nodes["geometry"] = gpd.points_from_xy(df_nodes["x"], df_nodes["y"])
+        gdf_nodes_labeled = gpd.GeoDataFrame(df_nodes, geometry="geometry", crs=crs)
+
+    else:
+        raise ValueError(f"Unknown source: {source!r}. Use 'osmnx' or 'inegi'.")
+
+    return graph, gdf_nodes_labeled, gdf_localities, cvegeo_map, crs, plot_margin
+
+
+def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="osmnx"):
+    """
+    Plot the labeled road network.
+    """
+    import osmnx as ox
+    import matplotlib.pyplot as plt
+
+    fig, ax = ox.plot_graph(graph, show=False, close=False)
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+    if source == "osmnx":
+        if gdf_localities is not None:
+            gdf_localities.boundary.plot(ax=ax, color="red")
+        gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+        ax.set_title("Ernesto Aguirre, Tabasco - Labeled Road Network",
+                     fontsize=16, color="white")
+    elif source == "inegi":
+        gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="tab20", markersize=1)
+        ax.set_title("INEGI - Initial Road Network", fontsize=16, color="white")
+    plt.show()
+
+
+def identify_boundary_nodes(graph, cvegeo_map):
+    """
+    Identify nodes that lie on the boundary between different localities.
+    """
+    from collections import defaultdict
+
+    boundary_nodes_by_locality = defaultdict(set)
+
+    for node in graph.nodes:
+        node_loc = cvegeo_map.get(node)
+        if node_loc is None:
+            continue
+
+        for neighbor in graph.neighbors(node):
+            neighbor_loc = cvegeo_map.get(neighbor)
+            if neighbor_loc is None or neighbor_loc != node_loc:
+                boundary_nodes_by_locality[node_loc].add(node)
+                break
+
+    return dict(boundary_nodes_by_locality)
+
+
+def build_reduced_clique_graph(graph, boundary_nodes_by_locality):
+    """
+    Build a reduced graph where each locality is represented by a clique of its boundary nodes.
+    """
+    import networkx as nx
+    from collections import defaultdict
+    from tqdm import tqdm
+
+    locality_cliques = []
+
+    # Pre-group nodes by locality to optimize clique construction
+    nodes_by_locality = defaultdict(list)
+    for node_id, data in graph.nodes(data=True):
+        loc = data.get("CVEGEO")
+        if loc is not None:
+            nodes_by_locality[loc].append(node_id)
+
+    pbar = tqdm(boundary_nodes_by_locality.items(), desc="Building locality cliques")
+    for loc, frontier_nodes in pbar:
+        n_frontier = len(frontier_nodes)
+        pbar.set_postfix(loc=loc, boundary_nodes=n_frontier)
+        loc_nodes = nodes_by_locality.get(loc, [])
+        locality_cliques.append(
+            build_locality_clique(
+                graph, loc, boundary_nodes_by_locality, nodos_localidad=loc_nodes
+            )
+        )
+    reduced_graph = nx.compose_all(locality_cliques)
+    return reduced_graph
+
+
+def plot_boundary_nodes_network(reduced_graph, gdf_localities=None, plot_margin=0.002, title="Boundary Node Network by Locality"):
+    """
+    Plot the boundary node network.
+    """
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+
+    if gdf_localities is not None:
+        gdf_localities.boundary.plot(ax=ax, color="gray", linewidth=0.5)
+
+    node_positions = {
+        nid: (data["x"], data["y"])
+        for nid, data in reduced_graph.nodes(data=True)
+    }
+
+    nx.draw_networkx_nodes(
+        reduced_graph, pos=node_positions, ax=ax,
+        node_size=24, node_color="white",
+    )
+    nx.draw_networkx_edges(
+        reduced_graph, pos=node_positions, ax=ax,
+        width=1, edge_color="orange",
+    )
+
+    ax.set_title(title, fontsize=20, color="white")
+    ax.axis("off")
+
+    coords = np.array(list(node_positions.values()))
+    ax.set_xlim(coords[:, 0].min() - plot_margin, coords[:, 0].max() + plot_margin)
+    ax.set_ylim(coords[:, 1].min() - plot_margin, coords[:, 1].max() + plot_margin)
+
+    plt.show()
+
+
+def plot_delaunay_triangulation(gdf_nodes_labeled, crs, title="Delaunay Triangulation of Locality Centroids"):
+    """
+    Compute and plot Delaunay triangulation of locality centroids.
+    """
+    import matplotlib.pyplot as plt
+    from scipy.spatial import Delaunay
+
+    centroids_df = (
+        gdf_nodes_labeled
+        .dropna(subset=["CVEGEO"])
+        .groupby("CVEGEO")[["x", "y"]]
+        .mean()
+    )
+
+    locality_labels = centroids_df.index.tolist()
+    centroid_points = centroids_df.values  # numpy array
+
+    delaunay_tri = Delaunay(centroid_points)
+
+    plt.figure(figsize=(6, 6))
+    plt.triplot(
+        centroid_points[:, 0], centroid_points[:, 1],
+        delaunay_tri.simplices, linewidth=0.8,
+    )
+    plt.scatter(centroid_points[:, 0], centroid_points[:, 1], color="red", s=30)
+    for i, label in enumerate(locality_labels):
+        plt.text(
+            centroid_points[i, 0], centroid_points[i, 1],
+            label, fontsize=8, ha="center", va="center",
+        )
+    plt.title(title)
+    plt.xlabel("Longitude" if crs == "EPSG:4326" else "X (m)")
+    plt.ylabel("Latitude" if crs == "EPSG:4326" else "Y (m)")
+    plt.gca().set_aspect("equal", "box")
+    plt.show()
+
+
+def plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities=None, num_iterations=0):
+    """
+    Plot the simplified graph.
+    """
+    import osmnx as ox
+    import matplotlib.pyplot as plt
+
+    fig, ax = ox.plot_graph(simplified_graph, show=False, close=False)
+    fig.patch.set_facecolor("black")
+    ax.set_facecolor("black")
+    if gdf_localities is not None:
+        gdf_localities.boundary.plot(ax=ax, color="red")
+    gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
+    ax.set_title(
+        f"Fully Simplified Graph (Converged in {num_iterations} iterations)",
+        fontsize=16, color="white",
+    )
+    plt.show()
+
+
+def print_distance_matrix_samples(distance_matrix, node_to_region):
+    """
+    Print samples from the inter-region distance matrix.
+    """
+    from itertools import islice
+
+    total_connections = sum(len(targets) for targets in distance_matrix.values())
+    total_boundary_nodes = len(node_to_region)
+
+    print(f"\n{'=' * 60}")
+    print("INTER-REGION DISTANCE")
+    print(f"{'=' * 60}")
+    print(f"Total inter-region connections: {total_connections}")
+    print(f"Total boundary nodes: {total_boundary_nodes}")
+
+    print("\nSample inter-region distances (first boundary node):")
+
+    first_node = next(iter(distance_matrix))
+    first_targets = distance_matrix[first_node]
+    source_region = node_to_region[first_node]
+
+    print(f"\n  First 5 targets from node {first_node} (region {source_region}):")
+
+    for target_node, distance in islice(first_targets.items(), 5):
+        target_region = node_to_region[target_node]
+        print(f"    -> node {target_node} (region {target_region}): {distance:.2f} m")
