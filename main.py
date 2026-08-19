@@ -23,6 +23,7 @@ operations performed:
 
 import pickle
 import time
+import networkx as nx
 from pathlib import Path
 import src.utils as fc
 
@@ -32,6 +33,8 @@ BASE_DIR = Path(__file__).resolve().parent
 # CONSTANTS
 
 SOURCE = "inegi"  # "osmnx" or "inegi"
+KEEP_LARGER_CC = True
+CODE_NAME = "CVEGEO"
 
 #  OSMnx settings 
 SHAPEFILE_PATH = BASE_DIR / "data" / "raw" / "shp" / "27l.shp"
@@ -57,8 +60,22 @@ graph, gdf_nodes_labeled, gdf_localities, cvegeo_map, CRS, PLOT_MARGIN = fc.load
     network_radius=NETWORK_RADIUS,
     inegi_graph_path=INEGI_GRAPH_PATH,
 )
-
+# Keep only the major connected component
+if KEEP_LARGER_CC:
+    cc = nx.weakly_connected_components(graph)
+    larger_cc_nodes = max(cc, key=len)
+    graph = graph.subgraph(larger_cc_nodes).copy()
+    
 print(f"    Graph loaded: {graph.number_of_nodes():,} nodes, {graph.number_of_edges():,} edges ({time.time()-t0:.1f}s)")
+
+connected = nx.is_weakly_connected(graph)
+print(f"    Is (weakly) connected?: {connected}")
+
+external_nodes = [
+    node for node, idx in graph.nodes(data=CODE_NAME) if idx is None
+]
+print(f"    External nodes: {len(external_nodes):,}, Internal nodes: {graph.number_of_nodes()-len(external_nodes):,}")
+
 
 # Visualization
 fc.plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities, source=SOURCE)
@@ -95,6 +112,14 @@ t0 = time.time()
 simplified_graph, num_iterations = fc.simplify_iteratively(graph)
 
 print(f"    Converged in {num_iterations} iterations → {simplified_graph.number_of_nodes():,} nodes, {simplified_graph.number_of_edges():,} edges ({time.time()-t0:.1f}s)")
+
+connected = nx.is_weakly_connected(simplified_graph)
+print(f"    Is connected?: {connected}")
+
+external_nodes = [
+    node for node, idx in simplified_graph.nodes(data=CODE_NAME) if idx is None
+]
+print(f"    External nodes: {len(external_nodes):,}, Internal nodes: {simplified_graph.number_of_nodes()-len(external_nodes):,}")
 
 fc.plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities, num_iterations)
 

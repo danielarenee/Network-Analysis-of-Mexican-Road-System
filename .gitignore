@@ -1,6 +1,10 @@
 # Ignore temporal folder
 road_network/temp/
 
+# Ignore folders
+.vscode/
+__pycache__/
+
 # ignore SQLite/GeoPackage temporary files
 *.gpkg-shm
 *.gpkg-wal
