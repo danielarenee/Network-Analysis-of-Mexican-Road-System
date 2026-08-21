@@ -4,6 +4,7 @@ road_network/temp/
 # Ignore folders
 .vscode/
 __pycache__/
+*.py[cod]
 
 # ignore SQLite/GeoPackage temporary files
 *.gpkg-shm
