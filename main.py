@@ -127,10 +127,13 @@ fc.plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities, nu
 
 # COMPUTE CITY NETWORK
 
-print(f"[5/5]")
+print(f"[5/5] Compute city network of simplified graph (by idea 2)")
 ig_graph = networkx_to_igraph(simplified_graph, id_city_label="CVEGEO")
+d1, p1, R1 = dijkstra_city_network(ig_graph, id_city="CVEGEO", id_external=None)
 
-d, p, R = dijkstra_city_network(ig_graph, "CVEGEO", None)
+print(f"[5/5] Compute city network of original graph (by idea 2)")
+ig_graph = networkx_to_igraph(graph, id_city_label="CVEGEO")
+d2, p2, R2 = dijkstra_city_network(ig_graph, id_city="CVEGEO", id_external=None)
 
 # SINTER-REGION DISTANCE MATRIX 
 
