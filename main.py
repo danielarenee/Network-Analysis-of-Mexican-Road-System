@@ -26,6 +26,7 @@ import time
 import networkx as nx
 from pathlib import Path
 import src.utils as fc
+from src.utils_dijkstras import networkx_to_igraph, dijkstra_city_network
 
 # Get project root directory
 BASE_DIR = Path(__file__).resolve().parent
@@ -122,6 +123,14 @@ external_nodes = [
 print(f"    External nodes: {len(external_nodes):,}, Internal nodes: {simplified_graph.number_of_nodes()-len(external_nodes):,}")
 
 fc.plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities, num_iterations)
+
+
+# COMPUTE CITY NETWORK
+
+print(f"[5/5]")
+ig_graph = networkx_to_igraph(simplified_graph, id_city_label="CVEGEO")
+
+d, p, R = dijkstra_city_network(ig_graph, "CVEGEO", None)
 
 # SINTER-REGION DISTANCE MATRIX 
 
