@@ -7,6 +7,8 @@ from matplotlib.collections import LineCollection
 from numpy import inf, asarray
 from time import time as t
 from glasbey import create_palette
+import imageio.v2 as imageio
+from IPython.display import display, Video
 
 
 node_attributes_labels = ["id_polygon", "x", "y"]
@@ -73,8 +75,9 @@ def dijkstra_city_network(
         id_city : str,
         id_external = None,
         draw = False,
-        **draw_kwargs
+        step = 10
         ):
+    print("Initializing...")
     # Number of vertices
     n = g.vcount()
     # List of predecessors
@@ -84,16 +87,23 @@ def dijkstra_city_network(
     # List of distances
     d = [inf if R[v] == id_external else 0 for v in range(n)]
     
+    F = [False if R[v] == 0 else True for v in range(n)]
+    
     # Priority queue
     Q = []
     for u in range(n):
         heapq.heappush(Q, (d[u], u))
     
     if draw:
+        print("Creating color palette...")
         colors = create_colors(R, id_external)
+        print("Creating initial figure...")
         fig, ax, scatter, edge_collection, edge_colors =  init_draw(g, R, colors)
-        
+        frame = capture_frame(fig, scatter, edge_collection, edge_colors, R, F, colors)
+        frames = [frame]
+        updates = 0
     
+    print("Running...")
     start = t()
     contador = 0
     while Q:
@@ -102,6 +112,7 @@ def dijkstra_city_network(
         if dist_u > d[u]:
             continue
     
+        flag = False
         for v in g.neighbors(u):
             try:
                 e_id = g.get_eid(u, v)
@@ -111,30 +122,55 @@ def dijkstra_city_network(
     
             if d[u] + w_uv < d[v]:
                 contador += 1
+                if p[v] is not None:
+                    F[p[v]] = True
                 d[v] = d[u] + w_uv
                 p[v] = u
                 R[v] = R[u]
+                F[v] = True
                 heapq.heappush(Q, (d[v], v))
+            else:
+                if R[v] != R[u]:
+                  flag = True
+                if draw:                   
+                    updates += 1
+                    if updates % step == 0:
+                        frame = capture_frame(fig, scatter, edge_collection, edge_colors, 
+                                              R, F, colors,
+                                              edge_id = e_id, base_vertex = u)
+                        frames.append(frame)
+        F[u] = flag
+    if draw:
+        frame = capture_frame(fig, scatter, edge_collection, edge_colors, R, F, colors)
+        frames.append(frame)
+        imageio.mimsave(
+            f"video_test.mp4",
+            frames,
+            fps=1,
+            codec="libx264",
+            macro_block_size=None
+        )
     final_time = t()-start
     
     print("Iterations: ", contador)
     print("Time: ", final_time, " s")
-    return d, p, R
+    return d, p, R, F
 
 def create_colors(labels,
                   id_external = None,
                   color_external_node = "lightgray"):
     palette = create_palette(palette_size = len(labels))
     colors = {i: color for i, color in zip(labels, palette)}
-    colors[id_external] = color_external
+    colors[id_external] = color_external_node
     return colors
+    
 
 def init_draw(
         g, 
         R,
         colors, 
-        figsize = (10, 10),
-        node_size = 15,
+        figsize = (20, 20),
+        node_size = 1,
         edge_width = 2,
         initial_edge_color = "gray",
         background_color = "darkslategray",
@@ -182,3 +218,39 @@ def init_draw(
     fig.patch.set_facecolor(background_color)
     ax.set_facecolor(background_color)
     return fig, ax, scatter, edge_collection, edge_colors
+
+
+def capture_frame(
+        fig,
+        scatter,
+        edge_collection,
+        edge_colors,
+        R,
+        F,
+        colors,
+        edge_id=None,
+        base_vertex=None):
+
+    # Actualizar colores de nodos
+    node_colors = [colors[r] for r in R]
+    scatter.set_color(node_colors)
+
+    # Tamaños según F
+    node_sizes = [2 if f else 1 for f in F]
+    scatter.set_sizes(node_sizes)
+
+    # Actualizar permanentemente color de arista aceptada
+    if edge_id is not None and base_vertex is not None:
+        edge_colors[edge_id] = colors[R[base_vertex]]
+
+    # Estilos iniciales de todas las aristas
+    edge_styles = ["solid"] * len(edge_colors)
+
+    edge_collection.set_color(edge_colors)
+    edge_collection.set_linestyle(edge_styles)
+
+    fig.canvas.draw()
+    frame = asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
+
+    return frame
+
