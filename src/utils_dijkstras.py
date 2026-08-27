@@ -169,7 +169,7 @@ def init_draw(
         g, 
         R,
         colors, 
-        figsize = (20, 20),
+        figsize = (25, 25),
         node_size = 1,
         edge_width = 2,
         initial_edge_color = "gray",
@@ -236,7 +236,7 @@ def capture_frame(
     scatter.set_color(node_colors)
 
     # Tamaños según F
-    node_sizes = [2 if f else 1 for f in F]
+    node_sizes = [1 if f else 1 for f in F]
     scatter.set_sizes(node_sizes)
 
     # Actualizar permanentemente color de arista aceptada
