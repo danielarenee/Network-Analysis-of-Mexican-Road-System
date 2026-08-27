@@ -1,4 +1,5 @@
 import igraph as ig
+import imageio.v2 as imageio
 import networkx as nx
 import matplotlib.pyplot as plt
 import heapq
@@ -7,7 +8,8 @@ from matplotlib.collections import LineCollection
 from numpy import inf, asarray
 from time import time as t
 from glasbey import create_palette
-import imageio.v2 as imageio
+from seaborn import color_palette
+
 from IPython.display import display, Video
 
 
@@ -156,11 +158,21 @@ def dijkstra_city_network(
     print("Time: ", final_time, " s")
     return d, p, R, F
 
-def create_colors(labels,
-                  id_external = None,
-                  color_external_node = "lightgray"):
-    palette = create_palette(palette_size = len(labels))
-    colors = {i: color for i, color in zip(labels, palette)}
+def create_colors(
+        labels,
+        id_external = None,
+        color_external_node = "lightgray",
+        method="seaborn"
+        ):
+    labels = list(labels)
+    n_colors = len(labels)
+
+    if method == "glasbey":
+        palette = create_palette(palette_size=n_colors)
+
+    elif method == "seaborn":
+        palette = color_palette("husl", n_colors=n_colors).as_hex()
+    colors = dict(zip(labels, palette))
     colors[id_external] = color_external_node
     return colors
     
