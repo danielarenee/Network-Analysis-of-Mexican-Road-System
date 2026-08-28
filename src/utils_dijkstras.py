@@ -77,7 +77,7 @@ def dijkstra_city_network(
         id_city : str,
         id_external = None,
         draw = False,
-        step = 10
+        step = 10000
         ):
     print("Initializing...")
     # Number of vertices
@@ -137,6 +137,7 @@ def dijkstra_city_network(
                 if draw:                   
                     updates += 1
                     if updates % step == 0:
+                        print(updates)
                         frame = capture_frame(fig, scatter, edge_collection, edge_colors, 
                                               R, F, colors,
                                               edge_id = e_id, base_vertex = u)

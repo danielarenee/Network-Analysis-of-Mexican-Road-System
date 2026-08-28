@@ -26,7 +26,7 @@ import time
 import networkx as nx
 from pathlib import Path
 import src.utils as fc
-from src.utils_dijkstras import networkx_to_igraph, dijkstra_city_network
+from src.utils_dijkstras import networkx_to_igraph, dijkstra_city_network, igraph_gdf
 
 # Get project root directory
 BASE_DIR = Path(__file__).resolve().parent
@@ -128,12 +128,18 @@ fc.plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities, nu
 # COMPUTE CITY NETWORK
 
 print(f"[5/5] Compute city network of simplified graph (by idea 2)")
-#ig_graph1 = networkx_to_igraph(simplified_graph, id_city_label="CVEGEO")
-#d1, p1, R1, F1 = dijkstra_city_network(ig_graph1, id_city="CVEGEO", id_external=None, draw=True)
+ig_graph1 = networkx_to_igraph(simplified_graph, id_city_label="CVEGEO")
+d1, p1, R1, F1 = dijkstra_city_network(ig_graph1, id_city="CVEGEO", id_external=None)
+gdf = igraph_gdf(ig_graph1, R1, crs=CRS)
+gdf.to_file("test1.gpkg", driver = "GPKG")
+
 
 print(f"[5/5] Compute city network of original graph (by idea 2)")
 ig_graph2 = networkx_to_igraph(graph, id_city_label="CVEGEO")
-d2, p2, R2, F2 = dijkstra_city_network(ig_graph2, id_city="CVEGEO", id_external=None, draw=True)
+d2, p2, R2, F2 = dijkstra_city_network(ig_graph2, id_city="CVEGEO", id_external=None)
+
+gdf = igraph_gdf(ig_graph2, R2, crs=CRS)
+gdf.to_file("test.gpkg", driver = "GPKG")
 
 # SINTER-REGION DISTANCE MATRIX 
 
