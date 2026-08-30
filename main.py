@@ -26,10 +26,11 @@ import time
 import networkx as nx
 from pathlib import Path
 import src.utils as fc
-from src.utils_dijkstras import networkx_to_igraph, dijkstra_city_network, igraph_gdf
+from src.utils_dijkstras import networkx_to_igraph,  igraph_to_gdf, dijkstra_city_network
 
 # Get project root directory
 BASE_DIR = Path(__file__).resolve().parent
+TESTS_DIR = BASE_DIR / "tests"
 
 # CONSTANTS
 
@@ -112,6 +113,7 @@ t0 = time.time()
 
 simplified_graph, num_iterations = fc.simplify_iteratively(graph)
 
+
 print(f"    Converged in {num_iterations} iterations → {simplified_graph.number_of_nodes():,} nodes, {simplified_graph.number_of_edges():,} edges ({time.time()-t0:.1f}s)")
 
 connected = nx.is_weakly_connected(simplified_graph)
@@ -129,17 +131,29 @@ fc.plot_simplified_graph(simplified_graph, gdf_nodes_labeled, gdf_localities, nu
 
 print(f"[5/5] Compute city network of simplified graph (by idea 2)")
 ig_graph1 = networkx_to_igraph(simplified_graph, id_city_label="CVEGEO")
+
+nodes_gdf, edges_gdf = igraph_to_gdf(ig_graph1, list(ig_graph1.vs["CVEGEO"]), crs=CRS)
+nodes_gdf.to_file(TESTS_DIR / "simplified_graph_nodes.gpkg", driver = "GPKG")
+edges_gdf.to_file(TESTS_DIR / "simplified_graph_edges.gpkg", driver = "GPKG")
+
 d1, p1, R1, F1 = dijkstra_city_network(ig_graph1, id_city="CVEGEO", id_external=None)
-gdf = igraph_gdf(ig_graph1, R1, crs=CRS)
-gdf.to_file("test1.gpkg", driver = "GPKG")
+nodes_gdf, edges_gdf =  igraph_to_gdf(ig_graph1, R1, crs=CRS)
+nodes_gdf.to_file(TESTS_DIR / "results_simplified_graph_nodes.gpkg", driver = "GPKG")
+edges_gdf.to_file(TESTS_DIR / "results_simplified_graph_edges.gpkg", driver = "GPKG")
 
 
 print(f"[5/5] Compute city network of original graph (by idea 2)")
 ig_graph2 = networkx_to_igraph(graph, id_city_label="CVEGEO")
-d2, p2, R2, F2 = dijkstra_city_network(ig_graph2, id_city="CVEGEO", id_external=None)
 
-gdf = igraph_gdf(ig_graph2, R2, crs=CRS)
-gdf.to_file("test.gpkg", driver = "GPKG")
+nodes_gdf, edges_gdf = igraph_to_gdf(ig_graph2, list(ig_graph2.vs["CVEGEO"]), crs=CRS)
+nodes_gdf.to_file(TESTS_DIR / "original_graph_nodes.gpkg", driver = "GPKG")
+edges_gdf.to_file(TESTS_DIR / "original_graph_edges.gpkg", driver = "GPKG")
+
+d2, p2, R2, F2 = dijkstra_city_network(ig_graph2, id_city="CVEGEO", id_external=None)
+nodes_gdf, edges_gdf = igraph_to_gdf(ig_graph2, R2, d2, crs=CRS)
+nodes_gdf.to_file(TESTS_DIR / "results_original_graph_nodes.gpkg", driver = "GPKG")
+edges_gdf.to_file(TESTS_DIR / "Results_original_graph_edges.gpkg", driver = "GPKG")
+
 
 # SINTER-REGION DISTANCE MATRIX 
 

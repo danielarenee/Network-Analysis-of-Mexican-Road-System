@@ -1,16 +1,11 @@
 import igraph as ig
-import imageio.v2 as imageio
 import networkx as nx
-import matplotlib.pyplot as plt
 import heapq
 
-from matplotlib.collections import LineCollection
-from numpy import inf, asarray
+from numpy import inf
 from time import time as t
-from glasbey import create_palette
-from seaborn import color_palette
-
-from IPython.display import display, Video
+from pandas import DataFrame
+from geopandas import GeoDataFrame, points_from_xy
 
 
 node_attributes_labels = ["id_polygon", "x", "y"]
@@ -75,9 +70,7 @@ def networkx_to_igraph(
 def dijkstra_city_network(
         g: ig.Graph,
         id_city : str,
-        id_external = None,
-        draw = False,
-        step = 10000
+        id_external = None
         ):
     print("Initializing...")
     # Number of vertices
@@ -95,15 +88,6 @@ def dijkstra_city_network(
     Q = []
     for u in range(n):
         heapq.heappush(Q, (d[u], u))
-    
-    if draw:
-        print("Creating color palette...")
-        colors = create_colors(R, id_external)
-        print("Creating initial figure...")
-        fig, ax, scatter, edge_collection, edge_colors =  init_draw(g, R, colors)
-        frame = capture_frame(fig, scatter, edge_collection, edge_colors, R, F, colors)
-        frames = [frame]
-        updates = 0
     
     print("Running...")
     start = t()
@@ -134,136 +118,47 @@ def dijkstra_city_network(
             else:
                 if R[v] != R[u]:
                   flag = True
-                if draw:                   
-                    updates += 1
-                    if updates % step == 0:
-                        print(updates)
-                        frame = capture_frame(fig, scatter, edge_collection, edge_colors, 
-                                              R, F, colors,
-                                              edge_id = e_id, base_vertex = u)
-                        frames.append(frame)
         F[u] = flag
-    if draw:
-        frame = capture_frame(fig, scatter, edge_collection, edge_colors, R, F, colors)
-        frames.append(frame)
-        imageio.mimsave(
-            f"video_test.mp4",
-            frames,
-            fps=1,
-            codec="libx264",
-            macro_block_size=None
-        )
     final_time = t()-start
     
     print("Iterations: ", contador)
     print("Time: ", final_time, " s")
     return d, p, R, F
 
-def create_colors(
-        labels,
-        id_external = None,
-        color_external_node = "lightgray",
-        method="seaborn"
+def igraph_to_gdf(
+        g : ig.Graph,
+        R : list,
+        d = None,
+        crs = "EPSG:6372",
         ):
-    labels = list(labels)
-    n_colors = len(labels)
+    node_ids = list(range(g.vcount()))
 
-    if method == "glasbey":
-        palette = create_palette(palette_size=n_colors)
-
-    elif method == "seaborn":
-        palette = color_palette("husl", n_colors=n_colors).as_hex()
-    colors = dict(zip(labels, palette))
-    colors[id_external] = color_external_node
-    return colors
+    nodes_df  = DataFrame({
+        "node_id": node_ids,
+        "x": g.vs["x"],
+        "y": g.vs["y"],
+        "id_nx": g.vs["id_nx"],
+        "id_polygon": g.vs["id_polygon"],
+        "R": R,
+    })
+    if d is not None:
+        nodes_df["d"] = d
+    nodes_gdf  = GeoDataFrame(
+        nodes_df ,
+        geometry = points_from_xy(nodes_df ["x"], nodes_df ["y"]),
+        crs = crs
+        )
     
-
-def init_draw(
-        g, 
-        R,
-        colors, 
-        figsize = (25, 25),
-        node_size = 1,
-        edge_width = 2,
-        initial_edge_color = "gray",
-        background_color = "darkslategray",
-        ):
-    
-    xs = g.vs["x"]
-    ys = g.vs["y"]
-    
-    fig, ax = plt.subplots(figsize = figsize)
-      
-    segments = [
-        [(xs[e.source], ys[e.source]),
-         (xs[e.target], ys[e.target])]
-        for e in g.es
-    ]
-    # Initial colors of edges
-    edge_colors = [ initial_edge_color ] * g.ecount()
-    edge_collection = LineCollection(
-        segments,
-        colors = edge_colors,
-        linewidths = edge_width,
-        zorder=2
+    edges_df = (
+        g.get_edge_dataframe()
+        .rename_axis("edge_id")
+        .reset_index()
     )
-    ax.add_collection(edge_collection)
-      
-    # Límites según la red
-    xmin, xmax = min(xs), max(xs)
-    ymin, ymax = min(ys), max(ys)
-    ax.set_xlim(xmin, xmax)
-    ax.set_ylim(ymin, ymax)
-      
-    ax.set_aspect("equal")
-    ax.axis("off")
-      
-    # Capa dinámica: nodos
-    node_colors = [colors[r] for r in R]
-    scatter = ax.scatter(
-        xs,
-        ys,
-        s = node_size,
-        c = node_colors,
-        zorder = 3
+    edges_gdf = GeoDataFrame(
+        edges_df,
+        geometry="geometry",
+        crs=crs,
     )
-      
-    fig.patch.set_facecolor(background_color)
-    ax.set_facecolor(background_color)
-    return fig, ax, scatter, edge_collection, edge_colors
-
-
-def capture_frame(
-        fig,
-        scatter,
-        edge_collection,
-        edge_colors,
-        R,
-        F,
-        colors,
-        edge_id=None,
-        base_vertex=None):
-
-    # Actualizar colores de nodos
-    node_colors = [colors[r] for r in R]
-    scatter.set_color(node_colors)
-
-    # Tamaños según F
-    node_sizes = [1 if f else 1 for f in F]
-    scatter.set_sizes(node_sizes)
-
-    # Actualizar permanentemente color de arista aceptada
-    if edge_id is not None and base_vertex is not None:
-        edge_colors[edge_id] = colors[R[base_vertex]]
-
-    # Estilos iniciales de todas las aristas
-    edge_styles = ["solid"] * len(edge_colors)
-
-    edge_collection.set_color(edge_colors)
-    edge_collection.set_linestyle(edge_styles)
-
-    fig.canvas.draw()
-    frame = asarray(fig.canvas.buffer_rgba())[:, :, :3].copy()
-
-    return frame
+    
+    return nodes_gdf, edges_gdf
 
