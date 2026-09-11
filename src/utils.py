@@ -752,8 +752,10 @@ def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="
     """
     import osmnx as ox
     import matplotlib.pyplot as plt
+    
+    G = nx.MultiDiGraph(graph)
 
-    fig, ax = ox.plot_graph(graph, show=False, close=False)
+    fig, ax = ox.plot_graph(G, show=False, close=False)
     fig.patch.set_facecolor("black")
     ax.set_facecolor("black")
     if source == "osmnx":

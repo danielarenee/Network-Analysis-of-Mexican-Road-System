@@ -1,6 +1,6 @@
 import networkx as nx
 
-from src.utils_2 import load_osmnx_graph, load_inegi_graph
+from src.utils_2 import load_osmnx_graph, load_inegi_graph, to_connected, to_undirected, to_simple_graph
 import src.utils as fc
 
 class Road_Network:
@@ -20,6 +20,8 @@ class Road_Network:
     ):
         self.id_city_label = id_city_label
         self.length_attr = length_attr
+        self.source = source
+        self.gdf_localities = None
         
         if source == "osmnx":
             self.crs = "EPSG:4326"
@@ -41,9 +43,11 @@ class Road_Network:
             
     def plot_labeled_network(self):
         fc.plot_labeled_network(
-            self.graph, 
-            self.gdf_nodes_labeled, 
-            source="inegi")
+            graph = self.graph,
+            gdf_nodes_labeled = self.gdf_nodes_labeled,
+            gdf_localities = self.gdf_localities,
+            source  = self.source
+        )
 
     def preprocess_inegi_graph(self):
         import math
@@ -76,60 +80,12 @@ class Road_Network:
         )
             
     def _to_connected(self):
-        if self.graph.is_directed():
-            cc = nx.weakly_connected_components(self.graph)
-        else:
-            cc = nx.connected_components(self.graph)
-        larger_cc_nodes = max(cc, key=len)
-        self.graph = self.graph.subgraph(larger_cc_nodes).copy()
+        self.graph = to_connected(self.graph)
         
     def _to_undirected(self):
-        if not self.graph.is_directed():
-            return
-                
-        graph = nx.MultiGraph()
-        
-        graph.graph.update(self.graph.graph)
-        graph.add_nodes_from(self.graph.nodes(data=True))
-                             
-        if self.graph.is_multigraph():
-            edges = self.graph.edges(keys=True, data=True)
-        else:
-            edges = (
-                (u, v, None, attr) 
-                for u, v, attr  in self.graph.edges(data=True)
-            )
-        for u, v, k, attr in edges:
-            new_key = (u, v, k)
-            graph.add_edge(u, v, new_key, **attr)
-            graph.edges[u, v, new_key].update(attr)
-        
-        self.graph = graph
+        self.graph = to_undirected(self.graph)
         
     def _to_simple_graph(self):
-        if not self.graph.is_multigraph():
-            return
-        
-        if self.graph.is_directed():
-            simple_graph = nx.DiGraph()
-        else:
-            simple_graph = nx.Graph()
-        
-        simple_graph.graph.update(self.graph.graph)
-        simple_graph.add_nodes_from(self.graph.nodes(data = True))
-        
-        for u, v, k, attr in self.graph.edges(keys=True, data=True):
-            if self.length_attr not in attr:
-                raise KeyError(f"{self.length_attr} is not an attribute")
-            candidate_length  = attr[self.length_attr]
-            if not simple_graph.has_edge(u, v):
-                simple_graph.add_edge(u, v)
-                simple_graph[u][v].update(attr)
-                continue
-            current_length = simple_graph[u][v][self.length_attr]
-            if candidate_length < current_length:
-                simple_graph[u][v].clear()
-                simple_graph[u][v].update(attr)            
-        self.graph = simple_graph
+        self.graph = to_simple_graph(self.graph, self.length_attr)
             
 

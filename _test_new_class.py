@@ -30,6 +30,6 @@ road = Road_Network(
     length_attr = "length",
     keep_larger_cc = True,
     to_undirected = True,
-    to_simple = False
+    to_simple = True
     )
 road.plot_labeled_network()
