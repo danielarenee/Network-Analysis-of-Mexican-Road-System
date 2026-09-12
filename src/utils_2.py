@@ -1,5 +1,7 @@
+import math
 import networkx as nx
-
+import pandas as pd
+import geopandas as gpd
 
 def load_osmnx_graph(**source_kwargs):
     import osmnx as ox
@@ -23,6 +25,33 @@ def load_inegi_graph(**source_kwargs):
         graph = pickle.load(f)
     return graph
 
+
+def preprocess_inegi_graph(graph, id_city_label, crs):           
+    # rename id_polygon
+    region_map = {}
+    for node_id, data in graph.nodes(data=True):
+        val = data.get("id_polygon")
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            graph.nodes[node_id][id_city_label] = None
+            region_map[node_id] = None
+        else:
+            graph.nodes[node_id][id_city_label] = int(val)
+            region_map[node_id] = int(val)
+
+    # build gdf_nodes_labeled
+    nodes_data = [
+        {"node_id": node_id, "x": data["x"], "y": data["y"],
+         id_city_label: data.get(id_city_label)}
+        for node_id, data in graph.nodes(data=True)
+    ]
+    df_nodes = pd.DataFrame(nodes_data)
+    df_nodes["geometry"] = gpd.points_from_xy(df_nodes["x"], df_nodes["y"])
+    gdf_nodes_labeled = gpd.GeoDataFrame(
+        df_nodes, 
+        geometry="geometry", 
+        crs = crs
+    )
+    return gdf_nodes_labeled, region_map
 
 def to_connected(graph):
     if graph.is_directed():

@@ -28,8 +28,32 @@ road = Road_Network(
     source = "inegi",
     id_city_label = "CVEGEO",
     length_attr = "length",
-    keep_larger_cc = True,
-    to_undirected = True,
-    to_simple = True
+    keep_larger_cc = False,
+    to_undirected = False,
+    to_simple = False
     )
-road.plot_labeled_network()
+print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1f}s)")
+print(f"    External nodes: {road.n_external:,}")
+print(f"    Internal nodes: {road.n_internal:,}")
+print(f"    Boundary nodes: {road.n_boundary:,}")
+print(f"    Localities: {len(road.boundary_nodes):,}")
+# Visualization
+#road.plot_labeled_network()
+
+
+# CLIQUE GRAPH CONSTRUCTION
+
+print(f"[3/5] Building locality cliques (this may take several minutes)...")
+t0 = time.time()
+
+road.reduce_city_subraphs()
+print(f"    Reduced graph: {road.reduced_graph.order():,} nodes, {road.reduced_graph.size():,} edges ({time.time()-t0:.1f}s)")
+
+# --- Visualization ---
+road.plot_boundary_nodes_network()
+
+
+# ITERATIVE GRAPH SIMPLIFICATION
+
+print(f"[4/5] Simplifying graph iteratively...")
+t0 = time.time()

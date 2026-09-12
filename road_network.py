@@ -1,10 +1,64 @@
 import networkx as nx
 
-from src.utils_2 import load_osmnx_graph, load_inegi_graph, to_connected, to_undirected, to_simple_graph
+from src.utils_2 import load_osmnx_graph, load_inegi_graph, to_connected, to_undirected, to_simple_graph, preprocess_inegi_graph
 import src.utils as fc
 
 class Road_Network:
- 
+    
+    # ------------------------------------------------------
+    # Atrributes
+    # ------------------------------------------------------
+    @property
+    def graph(self):
+        return self.__graph.copy()
+
+    @property
+    def boundary_nodes(self):
+        if self.__boundary_nodes is None:
+            self.__boundary_nodes = fc.identify_boundary_nodes(
+                self.__graph,
+                self.__region_map,
+            )
+        return self.__boundary_nodes
+    
+    @property
+    def external_nodes(self):
+        if self.__external_nodes is None:
+            self.__external_nodes = [
+                node 
+                for node, idx in self.__graph.nodes(
+                        data = self.__id_city_label
+                        ) 
+                if idx is self.__external_city_id
+            ]
+        return self.__external_nodes
+    
+    @property
+    def reduced_graph(self):
+        return self.__reduced_graph.copy()
+    
+    
+    @property
+    def n(self):
+        return self.__graph.order()
+    
+    @property
+    def m(self):
+        return self.__graph.size()
+    
+    @property
+    def n_external(self):
+        return len(self.external_nodes)
+    
+    @property
+    def n_internal(self):
+        return self.n - self.n_external
+    
+    @property
+    def n_boundary(self):
+        return sum(len(v) for v in self.__boundary_nodes.values())
+    
+    
     # ------------------------------------------------------
     # Constructor
     # ------------------------------------------------------
@@ -13,79 +67,79 @@ class Road_Network:
             source_kwargs,
             source = "inegi",
             id_city_label = "CVEGEO",
+            external_city_id = None,
             length_attr = "length",
             keep_larger_cc = True,
             to_undirected = True,
             to_simple = True
     ):
-        self.id_city_label = id_city_label
-        self.length_attr = length_attr
-        self.source = source
-        self.gdf_localities = None
+        self.__source = source
+        self.__id_city_label = id_city_label
+        self.__external_city_id = external_city_id
+        self.__length_attr = length_attr
+
+        self.__gdf_localities = None
+        self.__boundary_nodes = None
+        self.__external_nodes = None
+        self.__reduced_graph = None
         
         if source == "osmnx":
-            self.crs = "EPSG:4326"
-            self.graph = load_osmnx_graph(**source_kwargs)
+            self.__crs = "EPSG:4326"
+            self.__graph = load_osmnx_graph(**source_kwargs)
+            self.__plot_margin = 0.002
         elif source == "inegi":
-            self.crs = "EPSG:6372"
-            self.graph = load_inegi_graph(**source_kwargs)
-            self.preprocess_inegi_graph()
+            self.__crs = "EPSG:6372"
+            self.__plot_margin = 500  # meters
+            self.__graph = load_inegi_graph(**source_kwargs)
+            self.__gdf_nodes_labeled, self.__region_map = preprocess_inegi_graph(
+                self.__graph,
+                self.__id_city_label,
+                self.__crs
+            )
         else:
             raise ValueError(f"Unknown source: {source!r}. Use 'osmnx' or 'inegi'.")
 
         # Keep only the major connected component
         if keep_larger_cc:
-            self._to_connected()
+            self.__to_connected()
         if to_undirected:
-            self._to_undirected()
+            self.__to_undirected()
         if to_simple:
-            self._to_simple_graph()
+            self.__to_simple_graph()
             
     def plot_labeled_network(self):
         fc.plot_labeled_network(
-            graph = self.graph,
-            gdf_nodes_labeled = self.gdf_nodes_labeled,
-            gdf_localities = self.gdf_localities,
-            source  = self.source
+            graph = self.__graph,
+            gdf_nodes_labeled = self.__gdf_nodes_labeled,
+            gdf_localities = self.__gdf_localities,
+            source  = self.__source
         )
-
-    def preprocess_inegi_graph(self):
-        import math
-        import pandas as pd
-        import geopandas as gpd
-               
-        # rename id_polygon
-        region_map = {}
-        for node_id, data in self.graph.nodes(data=True):
-            val = data.get("id_polygon")
-            if val is None or (isinstance(val, float) and math.isnan(val)):
-                self.graph.nodes[node_id][self.id_city_label] = None
-                region_map[node_id] = None
-            else:
-                self.graph.nodes[node_id][self.id_city_label] = int(val)
-                region_map[node_id] = int(val)
-
-        # build gdf_nodes_labeled
-        nodes_data = [
-            {"node_id": node_id, "x": data["x"], "y": data["y"],
-             self.id_city_label: data.get(self.id_city_label)}
-            for node_id, data in self.graph.nodes(data=True)
-        ]
-        df_nodes = pd.DataFrame(nodes_data)
-        df_nodes["geometry"] = gpd.points_from_xy(df_nodes["x"], df_nodes["y"])
-        self.gdf_nodes_labeled = gpd.GeoDataFrame(
-            df_nodes, 
-            geometry="geometry", 
-            crs=self.crs
-        )
-            
-    def _to_connected(self):
-        self.graph = to_connected(self.graph)
         
-    def _to_undirected(self):
-        self.graph = to_undirected(self.graph)
+    def reduce_city_subraphs(self):
+        if self.__reduced_graph is None:
+            self.__reduced_graph = fc.build_reduced_clique_graph(
+                self.__graph,
+                self.__boundary_nodes,
+                self.__id_city_label
+            )
+        return self.__reduced_graph
+    
+    def plot_boundary_nodes_network(self,
+                                    title = "Boundary Node Network by Locality"):
+        fc.plot_boundary_nodes_network(
+            self.__reduced_graph,
+            self.__gdf_localities, 
+            self.__plot_margin,
+            title
+            )
+
+    def __to_connected(self):
+        self.__graph = to_connected(self.__graph)
         
-    def _to_simple_graph(self):
-        self.graph = to_simple_graph(self.graph, self.length_attr)
+    def __to_undirected(self):
+        self.__graph = to_undirected(self.__graph)
+        
+    def __to_simple_graph(self):
+        self.__graph = to_simple_graph(self.__graph, self.__length_attr)
             
 

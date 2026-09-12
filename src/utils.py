@@ -792,7 +792,7 @@ def identify_boundary_nodes(graph, cvegeo_map):
     return dict(boundary_nodes_by_locality)
 
 
-def build_reduced_clique_graph(graph, boundary_nodes_by_locality):
+def build_reduced_clique_graph(graph, boundary_nodes_by_locality, id_city_label):
     """
     Build a reduced graph where each locality is represented by a clique of its boundary nodes.
     """
@@ -805,7 +805,7 @@ def build_reduced_clique_graph(graph, boundary_nodes_by_locality):
     # Pre-group nodes by locality to optimize clique construction
     nodes_by_locality = defaultdict(list)
     for node_id, data in graph.nodes(data=True):
-        loc = data.get("CVEGEO")
+        loc = data.get(id_city_label)
         if loc is not None:
             nodes_by_locality[loc].append(node_id)
 
