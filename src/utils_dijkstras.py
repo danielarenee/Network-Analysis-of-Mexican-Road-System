@@ -7,66 +7,6 @@ from time import time as t
 from pandas import DataFrame
 from geopandas import GeoDataFrame, points_from_xy
 
-
-node_attributes_labels = ["id_polygon", "x", "y"]
-edge_attributes_labels = ["name", "length", "geometry"]
-
-def networkx_to_igraph(
-        nx_graph: nx.Graph,
-        id_city_label: str,
-        directed = False
-        ) -> ig.Graph:
-    
-    nodes = list(nx_graph.nodes)
-    n = len(nodes)
-    nodes_dict = {node: index for index, node in enumerate(nodes)}
-    
-    ig_graph = ig.Graph(
-        n = n,
-        directed = directed,
-    )
-
-    ig_graph.vs["id_nx"] = nodes
-
-    for attribute in node_attributes_labels + [id_city_label]:
-        ig_graph.vs[attribute] = [
-            nx_graph.nodes[node].get(attribute)
-            for node in nodes
-        ]
-
-    edges = []
-    edges_attributes = []
-    
-    if nx_graph.is_multigraph():
-        shortest_edges = {}
-        for source, target, _, data in nx_graph.edges(keys=True, data=True):
-            pair = (source, target)
-            if (pair not in shortest_edges
-                or data["length"] < shortest_edges[pair]["length"]):
-                shortest_edges[pair] = data
-        edge_iterator = ((source, target, data)
-                         for (source, target), data in shortest_edges.items())
-    else:
-        edge_iterator = nx_graph.edges(data=True)
-    
-    for source, target, data in edge_iterator:
-        edge = (nodes_dict[source], nodes_dict[target])
-        edges.append(edge)
-        edges_attributes.append(dict(data))
-
-    ig_graph.add_edges(edges)
-    
-    for attribute in edge_attributes_labels:
-        ig_graph.es[attribute] = [
-            data.get(attribute)
-            for data in edges_attributes
-        ]
-        
-    for attribute, value in nx_graph.graph.items():
-        ig_graph[attribute] = value
-    
-    return ig_graph
-
 def dijkstra_city_network(
         g: ig.Graph,
         id_city : str,
@@ -125,40 +65,4 @@ def dijkstra_city_network(
     print("Time: ", final_time, " s")
     return d, p, R, F
 
-def igraph_to_gdf(
-        g : ig.Graph,
-        R : list,
-        d = None,
-        crs = "EPSG:6372",
-        ):
-    node_ids = list(range(g.vcount()))
-
-    nodes_df  = DataFrame({
-        "node_id": node_ids,
-        "x": g.vs["x"],
-        "y": g.vs["y"],
-        "id_nx": g.vs["id_nx"],
-        "id_polygon": g.vs["id_polygon"],
-        "R": R,
-    })
-    if d is not None:
-        nodes_df["d"] = d
-    nodes_gdf  = GeoDataFrame(
-        nodes_df ,
-        geometry = points_from_xy(nodes_df ["x"], nodes_df ["y"]),
-        crs = crs
-        )
-    
-    edges_df = (
-        g.get_edge_dataframe()
-        .rename_axis("edge_id")
-        .reset_index()
-    )
-    edges_gdf = GeoDataFrame(
-        edges_df,
-        geometry="geometry",
-        crs=crs,
-    )
-    
-    return nodes_gdf, edges_gdf
 

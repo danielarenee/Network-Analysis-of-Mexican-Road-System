@@ -1,6 +1,8 @@
 from copy import deepcopy
 
-from src.utils_2 import load_osmnx_graph, load_inegi_graph, to_connected, to_undirected, to_simple_graph, preprocess_inegi_graph
+from src.utils_2 import (load_osmnx_graph, load_inegi_graph, to_connected, 
+                         to_undirected, to_simple_graph, preprocess_inegi_graph, 
+                         networkx_to_igraph, igraph_to_gdf)
 import src.utils as fc
 
 class Road_Network:
@@ -9,8 +11,11 @@ class Road_Network:
     # Atrributes
     # ------------------------------------------------------
     @property
-    def graph(self):
-        return self.__graph.copy()
+    def graph(self, kind = "nx"):
+        if kind == "nx":
+            return self.__nx_graph.copy()
+        elif kind == "ig":
+            return self.__ig_graph.copy()
 
     @property
     def boundary_nodes(self):
@@ -31,11 +36,11 @@ class Road_Network:
     
     @property
     def n(self):
-        return self.__graph.order()
+        return self.__nx_graph.order()
     
     @property
     def m(self):
-        return self.__graph.size()
+        return self.__nx_graph.size()
     
     @property
     def n_external(self):
@@ -76,20 +81,21 @@ class Road_Network:
         
         if source == "osmnx":
             self.__crs = "EPSG:4326"
-            self.__graph = load_osmnx_graph(**source_kwargs)
+            self.__nx_graph = load_osmnx_graph(**source_kwargs)
             self.__plot_margin = 0.002
         elif source == "inegi":
             self.__crs = "EPSG:6372"
             self.__plot_margin = 500  # meters
-            self.__graph = load_inegi_graph(**source_kwargs)
+            self.__nx_graph = load_inegi_graph(**source_kwargs)
             self.__gdf_nodes_labeled, self.__region_map = preprocess_inegi_graph(
-                self.__graph,
+                self.__nx_graph,
                 self.__id_city_label,
                 self.__crs
             )
         else:
             raise ValueError(f"Unknown source: {source!r}. Use 'osmnx' or 'inegi'.")
 
+        self.__ig_graph = None
         # Keep only the major connected component
         if keep_larger_cc:
             self.__to_connected()
@@ -107,7 +113,7 @@ class Road_Network:
         
         simplified_graph, num_iterations = fc.simplify_iteratively(self.graph)
         
-        new.__graph = simplified_graph.copy()
+        new.__nx_graph = simplified_graph.copy()
         new.__boundary_nodes = new.__compute_boundary_nodes()
         new.__external_nodes = new.__compute_external_nodes()
         return new, num_iterations
@@ -115,20 +121,11 @@ class Road_Network:
             
     def plot_labeled_network(self):
         fc.plot_labeled_network(
-            graph = self.__graph,
+            graph = self.__nx_graph,
             gdf_nodes_labeled = self.__gdf_nodes_labeled,
             gdf_localities = self.__gdf_localities,
             source  = self.__source
         )
-        
-    def reduce_city_subraphs(self):
-        if self.__reduced_graph is None:
-            self.__reduced_graph = fc.build_reduced_clique_graph(
-                self.__graph,
-                self.__boundary_nodes,
-                self.__id_city_label
-            )
-        return self.__reduced_graph
     
     def plot_boundary_nodes_network(self,
                                     title = "Boundary Node Network by Locality"):
@@ -138,26 +135,54 @@ class Road_Network:
             self.__plot_margin,
             title
             )
-
+        
+    def reduce_city_subraphs(self):
+        if self.__reduced_graph is None:
+            self.__reduced_graph = fc.build_reduced_clique_graph(
+                self.__nx_graph,
+                self.__boundary_nodes,
+                self.__id_city_label
+            )
+        return self.__reduced_graph
+    
+    def networkx_to_igraph(self):
+        if self.__source == "inegi":
+            self.__ig_graph = networkx_to_igraph(
+                nx_graph = self.__nx_graph,
+                id_city_label = self.__id_city_label,
+                )
+    
+    def to_gdf(self, R = None, d = None):
+        if self.__ig_graph is None:
+            self.networkx_to_igraph()        
+        nodes_gdf, edges_gdf = igraph_to_gdf(
+            g = self.__ig_graph,
+            crs = self.__crs,
+            R = R,
+            d = d
+        )
+        return nodes_gdf, edges_gdf 
+     
+        
     def __to_connected(self):
-        self.__graph = to_connected(self.__graph)
+        self.__nx_graph = to_connected(self.__nx_graph)
         
     def __to_undirected(self):
-        self.__graph = to_undirected(self.__graph)
+        self.__nx_graph = to_undirected(self.__nx_graph)
         
     def __to_simple_graph(self):
-        self.__graph = to_simple_graph(self.__graph, self.__length_attr)
+        self.__nx_graph = to_simple_graph(self.__nx_graph, self.__length_attr)
     
     def __compute_boundary_nodes(self):
         boundary_nodes = self.__boundary_nodes = fc.identify_boundary_nodes(
-            self.__graph,
+            self.__nx_graph,
             self.__region_map,
         )
         return boundary_nodes
     
     def __compute_external_nodes(self):
         external_nodes = [
-            node for node, idx in self.__graph.nodes(
+            node for node, idx in self.__nx_graph.nodes(
                 data = self.__id_city_label
             ) if idx is self.__external_city_id
         ]

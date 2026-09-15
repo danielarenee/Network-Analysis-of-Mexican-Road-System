@@ -17,7 +17,8 @@ import time
 
 import networkx as nx
 from math import sqrt
-from shapely.geometry import LineString
+from shapely.geometry import LineString, Point
+from shapely.ops import linemerge
 from collections import deque
 from tqdm import tqdm
 
@@ -217,6 +218,20 @@ def prune_degree_1(graph, min_degree=1):
 
     return H, removed_nodes
 
+def combine_attr(a, b):
+    result = []
+
+    for value in (a, b):
+        if value is None:
+            continue
+
+        if isinstance(value, list):
+            result.extend(value)
+        else:
+            result.append(value)
+
+    return result
+
 def prune_degree_2(graph):
     """
     Iteratively prune degree-2 nodes and merge their incident edges.
@@ -267,6 +282,9 @@ def prune_degree_2(graph):
     H = graph.copy()
     Hu = H.to_undirected(as_view=True)  # Undirected view for degree calculations
 
+    multigraph = H.is_multigraph()
+    directed = H.is_directed()
+    
     # Initialize queue with all degree-2 nodes
     nodes_deg_2 = [n for n, d in Hu.degree() if d == 2]
     queue = deque(nodes_deg_2)
@@ -292,17 +310,30 @@ def prune_degree_2(graph):
 
             # Direct dictionary lookups to find incident edges between v and u1 / u2
             edges_v_u1 = []
-            if u1 in H[v]:
-                edges_v_u1.extend(H[v][u1].values())
-            if v in H[u1]:
-                edges_v_u1.extend(H[u1][v].values())
-
             edges_v_u2 = []
-            if u2 in H[v]:
-                edges_v_u2.extend(H[v][u2].values())
-            if v in H[u2]:
-                edges_v_u2.extend(H[u2][v].values())
-
+            
+            if multigraph:
+                if u1 in H[v]:
+                    edges_v_u1.extend(H[v][u1].values())
+                if directed and v in H[u1]:
+                    edges_v_u1.extend(H[u1][v].values())
+            
+                if u2 in H[v]:
+                    edges_v_u2.extend(H[v][u2].values())
+                if directed and v in H[u2]:
+                    edges_v_u2.extend(H[u2][v].values())
+            
+            else:
+                if u1 in H[v]:
+                    edges_v_u1.append(H[v][u1])
+                if directed and v in H[u1]:
+                    edges_v_u1.append(H[u1][v])
+            
+                if u2 in H[v]:
+                    edges_v_u2.append(H[v][u2])
+                if directed and v in H[u2]:
+                    edges_v_u2.append(H[u2][v])
+            
             # Select shortest edge to each neighbor
             edge1 = min(edges_v_u1, key=lambda e_data: e_data.get("length", float('inf')))
             edge2 = min(edges_v_u2, key=lambda e_data: e_data.get("length", float('inf')))
@@ -312,24 +343,37 @@ def prune_degree_2(graph):
             len2 = edge2.get("length")
             geom1 = edge1.get("geometry")
             geom2 = edge2.get("geometry")
+            
+            edge_ids = combine_attr(edge1.get("edge_id"), edge2.get("edge_id"))
+            names = combine_attr(edge1.get("name"), edge2.get("name"))
+                        
+            # Coordinates of the shared node
+            v_coord = (H.nodes[v]["x"], H.nodes[v]["y"])
+            v_point = Point(v_coord)
 
             # If geometry is missing, construct LineString from coordinates
-            if geom1 is None:
+            if (geom1 is None) or (not isinstance(geom1, LineString)):
                 geom1 = LineString([
                     (H.nodes[u1]["x"], H.nodes[u1]["y"]),
-                    (H.nodes[v]["x"], H.nodes[v]["y"])
+                    v_point
                 ])
 
-            if geom2 is None:
+            if (geom2 is None) or (not isinstance(geom2, LineString)):
                 geom2 = LineString([
                     (H.nodes[u2]["x"], H.nodes[u2]["y"]),
-                    (H.nodes[v]["x"], H.nodes[v]["y"])
+                    v_point
                 ])
 
             # Create new merged edge and remove degree-2 node
             new_length = len1 + len2
-            new_geom = geom1.union(geom2)
-            H.add_edge(u1, u2, length=new_length, geometry=new_geom)
+            # Merge geometries (ensuring that they form a valid linestring)
+            new_geom = linemerge([geom1, geom2])
+            #new_geom = geom1.union(geom2)
+            H.add_edge(u1, u2,
+                       length=new_length,
+                       geometry=new_geom,
+                       edge_id = edge_ids,
+                       name = names)
             H.remove_node(v)
 
     return H, removed_nodes
@@ -455,7 +499,8 @@ def simplify_iteratively(graph):
         nodes_before = graph.number_of_nodes()
         edges_before = graph.number_of_edges()
 
-        _, graph, _ = simplify_multiple_edges(graph)
+        if graph.is_multigraph():
+            _, graph, _ = simplify_multiple_edges(graph)
         graph, _ = prune_degree_1(graph)
         graph, _ = prune_degree_2(graph)
 
