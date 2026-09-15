@@ -98,7 +98,7 @@ print(f"    {len(boundary_nodes_by_locality):,} localities, {total_boundary:,} b
 print(f"[3/5] Building locality cliques (this may take several minutes)...")
 t0 = time.time()
 
-reduced_graph = fc.build_reduced_clique_graph(graph, boundary_nodes_by_locality)
+reduced_graph = fc.build_reduced_clique_graph(graph, boundary_nodes_by_locality, CODE_NAME)
 
 print(f"    Reduced graph: {reduced_graph.number_of_nodes():,} nodes, {reduced_graph.number_of_edges():,} edges ({time.time()-t0:.1f}s)")
 

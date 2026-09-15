@@ -38,7 +38,7 @@ print(f"    Internal nodes: {road.n_internal:,}")
 print(f"    Boundary nodes: {road.n_boundary:,}")
 print(f"    Localities: {len(road.boundary_nodes):,}")
 # Visualization
-#road.plot_labeled_network()
+road.plot_labeled_network()
 
 
 # CLIQUE GRAPH CONSTRUCTION
@@ -47,6 +47,7 @@ print(f"[3/5] Building locality cliques (this may take several minutes)...")
 t0 = time.time()
 
 road.reduce_city_subraphs()
+print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1f}s)")
 print(f"    Reduced graph: {road.reduced_graph.order():,} nodes, {road.reduced_graph.size():,} edges ({time.time()-t0:.1f}s)")
 
 # --- Visualization ---
@@ -57,3 +58,12 @@ road.plot_boundary_nodes_network()
 
 print(f"[4/5] Simplifying graph iteratively...")
 t0 = time.time()
+
+simplified_graph, num_iterations = road.simplify()
+
+print(f"    Converged in {num_iterations} iterations → {simplified_graph.n:,} nodes, {simplified_graph.m:,} edges ({time.time()-t0:.1f}s)")
+print(f"    External nodes: {simplified_graph.n_external:,}")
+print(f"    Internal nodes: {simplified_graph.n_internal:,}")
+print(f"    Boundary nodes: {simplified_graph.n_boundary:,}")
+
+simplified_graph.plot_labeled_network()

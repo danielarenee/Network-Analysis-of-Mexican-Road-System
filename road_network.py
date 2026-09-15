@@ -1,4 +1,4 @@
-import networkx as nx
+from copy import deepcopy
 
 from src.utils_2 import load_osmnx_graph, load_inegi_graph, to_connected, to_undirected, to_simple_graph, preprocess_inegi_graph
 import src.utils as fc
@@ -15,22 +15,13 @@ class Road_Network:
     @property
     def boundary_nodes(self):
         if self.__boundary_nodes is None:
-            self.__boundary_nodes = fc.identify_boundary_nodes(
-                self.__graph,
-                self.__region_map,
-            )
+            self.__boundary_nodes = self.__compute_boundary_nodes()
         return self.__boundary_nodes
     
     @property
     def external_nodes(self):
         if self.__external_nodes is None:
-            self.__external_nodes = [
-                node 
-                for node, idx in self.__graph.nodes(
-                        data = self.__id_city_label
-                        ) 
-                if idx is self.__external_city_id
-            ]
+            self.__external_nodes = self.__compute_external_nodes()
         return self.__external_nodes
     
     @property
@@ -106,6 +97,21 @@ class Road_Network:
             self.__to_undirected()
         if to_simple:
             self.__to_simple_graph()
+        
+        self.boundary_nodes
+        self.external_nodes
+    
+    def simplify(self):
+        
+        new = deepcopy(self)
+        
+        simplified_graph, num_iterations = fc.simplify_iteratively(self.graph)
+        
+        new.__graph = simplified_graph.copy()
+        new.__boundary_nodes = new.__compute_boundary_nodes()
+        new.__external_nodes = new.__compute_external_nodes()
+        return new, num_iterations
+    
             
     def plot_labeled_network(self):
         fc.plot_labeled_network(
@@ -141,5 +147,18 @@ class Road_Network:
         
     def __to_simple_graph(self):
         self.__graph = to_simple_graph(self.__graph, self.__length_attr)
-            
-
+    
+    def __compute_boundary_nodes(self):
+        boundary_nodes = self.__boundary_nodes = fc.identify_boundary_nodes(
+            self.__graph,
+            self.__region_map,
+        )
+        return boundary_nodes
+    
+    def __compute_external_nodes(self):
+        external_nodes = [
+            node for node, idx in self.__graph.nodes(
+                data = self.__id_city_label
+            ) if idx is self.__external_city_id
+        ]
+        return external_nodes
