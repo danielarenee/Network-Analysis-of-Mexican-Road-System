@@ -39,7 +39,6 @@ print(f"    Localities: {len(road.boundary_nodes):,}")
 # Visualization
 road.plot_labeled_network()
 
-
 # CLIQUE GRAPH CONSTRUCTION
 
 print(f"[3/5] Building locality cliques (this may take several minutes)...")
@@ -70,12 +69,16 @@ simplified_graph.plot_labeled_network()
 road.networkx_to_igraph()
 simplified_graph.networkx_to_igraph()
 
-
 path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
-nodes_gdf, edges_gdf = road.to_gdf()
-nodes_gdf.to_file(path + "road_n.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + "road_e.gpkg", driver = "GPKG")
 
-nodes_gdf, edges_gdf = simplified_graph.to_gdf()
+
+d, p, R, F, contador, final_time = road.voronoi_dijkstra()
+nodes_gdf, edges_gdf = road.to_gdf(R=R, d=d)
+nodes_gdf.to_file(path + "road_n.gpkg", driver = "GPKG", index=False)
+edges_gdf.to_file(path + "road_e.gpkg", driver = "GPKG", index=False)
+
+
+d, p, R, F, contador, final_time = simplified_graph.voronoi_dijkstra()
+nodes_gdf, edges_gdf = simplified_graph.to_gdf(R=R, d=d)
 nodes_gdf.to_file(path + "simplified_n.gpkg", driver = "GPKG")
 edges_gdf.to_file(path + "simplified_e.gpkg", driver = "GPKG")

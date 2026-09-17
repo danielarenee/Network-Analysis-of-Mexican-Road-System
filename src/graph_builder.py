@@ -41,19 +41,17 @@ def create_road_network(roads, unions, save_path):
     print("Adding nodes...")
     G.add_nodes_from(nodes)
     
-    # Check nodes
-    print(f"Nodes: {G.order():,}")
-    
     print("Creating edges list...")
     # Forward edges
     forward_edges = [
-        (u, v, {"name": name, "length": length, "geometry": geom})
-        for u, v, name, length, geom in zip(
+        (u, v, {"name": name, "length": length, "geometry": geom, "id_net": idx})
+        for u, v, name, length, geom, idx in zip(
             roads["UNION_INI"],
             roads["UNION_FIN"],
             roads["NOMBRE"],
             roads["LONGITUD"],
-            roads["geometry"]
+            roads["geometry"],
+            roads["ID_RED"]
         )
     ]
     
@@ -61,13 +59,14 @@ def create_road_network(roads, unions, save_path):
     mask = roads["CIRCULA"] == "Dos sentidos"
     two_way_roads = roads[mask]
     reverse_edges = [
-        (v, u, {"name": name, "length": length, "geometry": geom})
-        for u, v, name, length, geom in zip(
+        (v, u, {"name": name, "length": length, "geometry": geom.reverse(), "id_net": idx})
+        for u, v, name, length, geom, idx in zip(
             two_way_roads["UNION_INI"],
             two_way_roads["UNION_FIN"],
             two_way_roads["NOMBRE"],
             two_way_roads["LONGITUD"],
-            two_way_roads["geometry"]
+            two_way_roads["geometry"],
+            two_way_roads["ID_RED"]
         )
     ]
     
@@ -76,6 +75,14 @@ def create_road_network(roads, unions, save_path):
     # Add edges from roads (lines) in bulk
     print("Adding edges...")
     G.add_edges_from(edges)
+    
+    # Remove isolated nodes
+    print("Removing isolated nodes...")
+    isolated_nodes = list(nx.isolates(G))
+    G.remove_nodes_from(isolated_nodes)
+    
+    # Check nodes
+    print(f"Nodes: {G.order():,}")
     
     # Check edges
     print(f"Edges: {G.size():,}")
