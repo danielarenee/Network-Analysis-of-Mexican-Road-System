@@ -69,8 +69,8 @@ simplified_graph.plot_labeled_network()
 road.networkx_to_igraph()
 simplified_graph.networkx_to_igraph()
 
-path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
-
+#path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+path = "C:\\Users\\Saib\\Documents\\Zoom\\"
 
 d, p, R, F, contador, final_time = road.voronoi_dijkstra()
 nodes_gdf, edges_gdf = road.to_gdf(R=R, d=d)

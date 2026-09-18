@@ -218,19 +218,40 @@ def prune_degree_1(graph, min_degree=1):
 
     return H, removed_nodes
 
-def combine_attr(a, b):
-    result = []
+def combine_attr(a, b, separator=" | "):
+    """
+    Combine two attribute values into a single scalar value.
+
+    Parameters
+    ----------
+    a
+        First attribute value.
+    b
+        Second attribute value.
+    separator : str, default=" | "
+        Separator used when multiple distinct values are combined.
+
+    Returns
+    -------
+    str
+        Combined attribute value.
+    """
+    values = []
 
     for value in (a, b):
         if value is None:
             continue
-
+        
+        # Flatten list values
         if isinstance(value, list):
-            result.extend(value)
+            values.extend(value)
         else:
-            result.append(value)
+            values.append(value)
+        
+    # Remove duplicates while preserving order
+    values = list(dict.fromkeys(values))
 
-    return result
+    return separator.join(map(str, values))
 
 def prune_degree_2(graph):
     """
@@ -346,6 +367,7 @@ def prune_degree_2(graph):
             
             edge_ids = combine_attr(edge1.get("edge_id"), edge2.get("edge_id"))
             names = combine_attr(edge1.get("name"), edge2.get("name"))
+            id_net = combine_attr(edge1.get("id_net"), edge2.get("id_net"))
                         
             # Coordinates of the shared node
             v_coord = (H.nodes[v]["x"], H.nodes[v]["y"])
@@ -370,10 +392,11 @@ def prune_degree_2(graph):
             new_geom = linemerge([geom1, geom2])
             #new_geom = geom1.union(geom2)
             H.add_edge(u1, u2,
-                       length=new_length,
-                       geometry=new_geom,
+                       id_net = id_net,
+                       length = new_length,
                        edge_id = edge_ids,
-                       name = names)
+                       name = names,
+                       geometry=new_geom,)
             H.remove_node(v)
 
     return H, removed_nodes
@@ -853,11 +876,12 @@ def build_reduced_clique_graph(graph, boundary_nodes_by_locality, id_city_label)
         loc = data.get(id_city_label)
         if loc is not None:
             nodes_by_locality[loc].append(node_id)
-
+        
+    # Build the reduced clique of each locality
     pbar = tqdm(boundary_nodes_by_locality.items(), desc="Building locality cliques")
-    for loc, frontier_nodes in pbar:
-        n_frontier = len(frontier_nodes)
-        pbar.set_postfix(loc=loc, boundary_nodes=n_frontier)
+    for loc, boundary_nodes in pbar:
+        n_boundary = len(boundary_nodes)
+        pbar.set_postfix(loc=loc, boundary_nodes=n_boundary)
         loc_nodes = nodes_by_locality.get(loc, [])
         locality_cliques.append(
             build_locality_clique(

@@ -14,15 +14,29 @@ class Road_Network:
     # ATTRIBUTES
     # ------------------------------------------------------
     @property
-    def graph(self, kind = "nx"):
+    def graph(self):
         """Return a copy of the NetworkX Graph representation."""
-        self._graph()
+        return self._graph()
 
     @property
     def boundary_nodes(self):
         """Return a dictionary of boundary nodes by region."""
         if self.__boundary_nodes is None:
             self.__boundary_nodes = self.__compute_boundary_nodes()
+            
+            # Map NetworkX node IDs to igraph vertex indices
+            map_node_id_to_ig = {
+                node_id: i
+                for i, node_id in enumerate(self.__nx_graph.nodes)
+            }
+            self.__boundary_nodes_ig = {
+                region: {
+                    map_node_id_to_ig[node_id]
+                    for node_id in nodes
+                }
+                for region, nodes in self.__boundary_nodes.items()
+            }
+            
         return self.__boundary_nodes
     
     @property
