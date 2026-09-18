@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 columns_union = ["ID_UNION", "geometry"]
 columns_cities = ["id_convex", "geometry"]
 column_ent = ["CVE_ENT", "geometry"]
-columns_roads = ["NOMBRE", "LONGITUD", "geometry", "CIRCULA", "UNION_INI", "UNION_FIN", "COND_PAV", "ESTATUS", "CONDICION", "TIPO_VIAL"]
+columns_roads = ["NOMBRE", "LONGITUD", "ID_RED", "geometry", "CIRCULA", "UNION_INI", "UNION_FIN", "COND_PAV", "ESTATUS", "CONDICION", "TIPO_VIAL"]
 
 # Features fo filter (roads)
 # COND_PAV: ['N/A', 'Con pavimento', 'Sin pavimento']

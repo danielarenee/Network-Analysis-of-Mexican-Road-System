@@ -2,11 +2,10 @@
 # PACKAGES
 ###########
 # Import packages
-import geopandas as gpd
+from geopandas  import read_file
 import networkx as nx
 import pickle
 
-from tqdm import tqdm
 from pathlib import Path
 
 ###########
@@ -19,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ###########
 # FUNCTIONS
 ###########
-def create_road_network(roads, unions, save_path):
+def create_road_network(roads, unions):
     # Create digraph
     G = nx.MultiDiGraph()
     
@@ -97,19 +96,33 @@ def create_road_network(roads, unions, save_path):
 # Paths of roads and unions
 unions_path = BASE_DIR / "data" / "processed" / "unions.gpkg"
 roads_path = BASE_DIR / "data" / "processed" / "roads.gpkg"
-graph_save_path = BASE_DIR / "data" / "processed" / "road_network.pkl"
+graph_save_path = BASE_DIR / "data" / "processed"
 
 # Import .gpkg of roads and unions
-unions = gpd.read_file(unions_path)
-roads = gpd.read_file(roads_path)
+unions = read_file(unions_path)
+roads = read_file(roads_path)
 
 # Create road network
-G = create_road_network(roads, unions, save_path = graph_save_path)
+G = create_road_network(roads, unions)
 
 # Save graph
+save_path = graph_save_path / "road_network.pkl"
 save_path.parent.mkdir(parents=True, exist_ok=True)
-with open(save_path, "wb") as f:
+with open(graph_save_path, "wb") as f:
     pickle.dump(
         G, f,
         protocol = pickle.HIGHEST_PROTOCOL
         )
+"""
+for i in range(1, 33):
+    nodes = [
+        v for v in G.vs() if v["CVE_ENT"] == i 
+        ]
+    H = G.subgraph(nodes)
+    save_path = graph_save_path / f"road_network_{i}.pkl"
+    with open(graph_save_path, "wb") as f:
+        pickle.dump(
+            H, f,
+            protocol = pickle.HIGHEST_PROTOCOL
+            )
+        """
