@@ -1,0 +1,19 @@
+Step 1
+  Download the 2025 National Road Network (Red Nacional de Caminos 2025)
+
+Step 2 
+  Unzip the file
+
+Step 3
+  Copy the file "rnc2025.gpkg" to the
+  data/raw folder
+
+Step 4 
+  Run the file "src/preprocessing/preprocessing_data.py"
+
+Step 5
+  Check that the files created in the
+  data/processed/ folder do not exceed 100 MB
+
+Step 6
+  Run the file "src/graph_builder"

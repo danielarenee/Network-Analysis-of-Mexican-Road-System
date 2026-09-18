@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # Columns to select from the join file
 columns_union = ["ID_UNION", "geometry"]
 columns_cities = ["id_convex", "geometry"]
+column_ent = ["CVE_ENT", "geometry"]
 columns_roads = ["NOMBRE", "LONGITUD", "geometry", "CIRCULA", "UNION_INI", "UNION_FIN", "COND_PAV", "ESTATUS", "CONDICION", "TIPO_VIAL"]
 
 # Features fo filter (roads)
@@ -48,6 +49,7 @@ epsg = 6372
 # Define paths
 rnc_gpkg_path = BASE_DIR / "data" / "raw" / "rnc2025.gpkg"
 localities_gpkg_path = BASE_DIR / "data" / "raw" / "LocalitiesGrouped_2020_data.gpkg"
+ent_gpkg_path =  BASE_DIR / "data" / "raw" / "00ent.gpkg"
 unions_output_path = BASE_DIR / "data" / "processed" / "unions.gpkg"
 roads_output_path = BASE_DIR / "data" / "processed" / "roads.gpkg"
 
@@ -70,6 +72,19 @@ rnc_union = gpd.sjoin(
     predicate="within"
 )
 rnc_union = rnc_union.drop(columns="index_right")
+
+# Read city boundaries
+print(f"Reading states boundaries from {ent_gpkg_path}...")
+ent = gpd.read_file(ent_gpkg_path, columns = column_ent)
+print("Performing spatial join...")
+rnc_union = gpd.sjoin(
+    rnc_union,
+    ent,
+    how="left",
+    predicate="within"
+)
+rnc_union = rnc_union.drop(columns="index_right")
+
 
 # Save file
 print(f"Saving unions to {unions_output_path}...")

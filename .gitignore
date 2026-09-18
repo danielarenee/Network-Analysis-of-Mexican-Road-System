@@ -6,6 +6,9 @@ road_network/temp/
 __pycache__/
 *.py[cod]
 
+# Ignore files
+data/raw/rnc2025.gpkg
+
 # ignore SQLite/GeoPackage temporary files
 *.gpkg-shm
 *.gpkg-wal

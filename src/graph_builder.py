@@ -87,13 +87,6 @@ def create_road_network(roads, unions, save_path):
     # Check edges
     print(f"Edges: {G.size():,}")
     
-    # Save graph
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(save_path, "wb") as f:
-        pickle.dump(
-            G, f,
-            protocol = pickle.HIGHEST_PROTOCOL
-            )
     return G
 
 
@@ -111,5 +104,12 @@ unions = gpd.read_file(unions_path)
 roads = gpd.read_file(roads_path)
 
 # Create road network
-create_road_network(roads, unions, save_path = graph_save_path)
+G = create_road_network(roads, unions, save_path = graph_save_path)
 
+# Save graph
+save_path.parent.mkdir(parents=True, exist_ok=True)
+with open(save_path, "wb") as f:
+    pickle.dump(
+        G, f,
+        protocol = pickle.HIGHEST_PROTOCOL
+        )
