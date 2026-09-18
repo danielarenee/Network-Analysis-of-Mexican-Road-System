@@ -1,3 +1,4 @@
+import heapq
 from copy import deepcopy
 from networkx import set_node_attributes
 
@@ -267,13 +268,230 @@ class Road_Network:
             Total execution time of the algorithm.
         """
         d, p, R, F, contador, final_time = voronoi_dijkstra(
-            g = self.__ig_graph, 
+            g = self.__ig_graph,
             id_city_label = self.__id_city_label,
             external_city_id = self.__external_city_id
         )
         return d, p, R, F, contador, final_time
-    
-    
+
+
+    def dijkstra(self, source, targets=None, weight="length"):
+        """
+        Compute shortest paths from a single source node to a subset of
+        target nodes using a binary-heap Dijkstra over the igraph
+        representation.
+
+        Parameters
+        ----------
+        source
+            Source node
+        targets : optional (Default: None)
+            Destination nodes. If None, distances are computed to every node
+            reachable from the source.
+        weight : str, optional
+            Edge attribute used as cost. Default 'length'.
+
+        Returns
+        -------
+        distances : dict
+            Mapping from target node ID to its shortest distance from
+            the source.
+        paths : dict
+            Mapping from target node ID to the ordered list of node IDs
+            along the shortest path from the source.
+        """
+
+        # first build the igraph graph in case we havent 
+        if self.__ig_graph is None:
+            self.networkx_to_igraph()
+
+        g = self.__ig_graph # g is the igraph copy
+
+        # g.vs["node_id"] has the original NetworkX node ID for every vertex
+        # so we can work with igraph indexes and Nx mode_ids
+        node_to_ig = {node_id: i for i, node_id in enumerate(g.vs["node_id"])}
+
+        # translate source node id to igraph index
+        if source not in node_to_ig:
+            raise KeyError(f"Source node {source!r} is not in the graph.")
+        source_ig = node_to_ig[source]
+
+        if targets is None:
+            target_ig_ids = None
+        else: # same thing for target nodes
+            target_ig_ids = set()
+            for target in targets:
+                if target not in node_to_ig:
+                    raise KeyError(f"Target node {target!r} is not in the graph.")
+                target_ig_ids.add(node_to_ig[target])
+
+        # Dijkstra
+        # dist[u] : dict of best known distance from source_ig to u so far
+        # prev[u] : predecessor of u on that best-known path (used to walk the path 
+        #           back to the source).
+        # visited : set of vertices whose shortest distance is finalized
+        # heap : min-priority queue of (distance, vertex) pairs, always
+        #           popping the currently-closest unvisited vertex next
+        # pending : if we were given specific targets, this is the set of
+        #           igraph indices we're still waiting to finalize. it lets us 
+        #           break out of the loop when empty
+
+        # initialize
+        dist = {source_ig: 0.0} 
+        prev = {source_ig: None}
+        visited = set()
+        pending = set(target_ig_ids) if target_ig_ids is not None else None
+        heap = [(0.0, source_ig)] # first push
+
+        # keep going while there is something left to explore
+        # and we have targets unresolved
+        while heap and (pending is None or pending):
+            d, u = heapq.heappop(heap) 
+            if u in visited:
+                continue
+            visited.add(u)
+            if pending is not None:
+                pending.discard(u)
+
+            # relax every edge (u, v) aka. if going through u gives v a shorter
+            # distance than what we currently have, record the improvement
+            # and push the new candidate distance to the heap
+            for v in g.neighbors(u):
+                edge_id = g.get_eid(u, v)
+                w = g.es[edge_id][weight]
+
+                new_dist = d + w
+                if new_dist < dist.get(v, float("inf")):
+                    dist[v] = new_dist
+                    prev[v] = u
+                    heapq.heappush(heap, (new_dist, v))
+
+        # decide which vertices we want results for
+        if target_ig_ids is not None:
+            result_ig_ids = target_ig_ids
+        else:
+            result_ig_ids = set(dist) - {source_ig}
+
+        distances = {}
+        paths = {}
+        for target_ig in result_ig_ids:
+
+            # a target may be unreachable 
+            if target_ig not in dist:
+                continue
+
+            # reconstruct the path by walking predecessors backwards from
+            # target to the source
+            path_ig = []
+            node = target_ig
+            while node is not None:
+                path_ig.append(node)
+                node = prev[node]
+            path_ig.reverse()
+
+            target_id = g.vs[target_ig]["node_id"]
+            distances[target_id] = dist[target_ig]
+            paths[target_id] = [g.vs[i]["node_id"] for i in path_ig]
+
+        # output is two dicts, one with distances {100: 154.4}
+        # and one with paths {100: [150, 189, 200]}
+        return distances, paths
+
+
+    def multi_source_dijkstra(self, sources, targets=None, weight="length"):
+        """
+        Compute shortest paths from several source nodes to a subset of
+        target nodes. This is just a wrapper around `dijkstra`
+
+        Parameters
+        ----------
+        sources : iterable
+            Source nodes, using the original NetworkX node identifiers
+        targets : optional (Default: None)
+            Destination nodes, passed through to `dijkstra` for every
+            source. If None, distances are computed to every node
+            reachable from each source.
+        weight : str, optional
+            Edge attribute used as cost. Default 'length'.
+
+        Returns
+        -------
+        distances : dict
+            Nested dict: distances[source][target] = shortest distance.
+        paths : dict
+            Nested dict: paths[source][target] = ordered list of node
+            IDs from that source to that target.
+        """
+
+        # initialize dicts
+        distances = {}
+        paths = {}
+
+        for source in sources:
+            source_distances, source_paths = self.dijkstra(
+                source, targets=targets, weight=weight
+            )
+            distances[source] = source_distances
+            paths[source] = source_paths
+
+        # outer key will be source and inner key will be target
+        # distances {100:{200:1385.4, 300:346.3}, 250:{...}}
+
+        return distances, paths
+
+
+    def boundary_distance_matrix(self, weight="length"):
+        """
+        Compute shortest-path distances between boundary nodes that
+        belong to different regions.
+
+        For each region, its boundary nodes are used as sources and the
+        boundary nodes of every other region are used as targets
+
+        Parameters
+        ----------
+        weight : str, optional
+            Default 'length'.
+
+        Returns
+        -------
+        distances : dict
+            Nested dict: distances[source][target] = shortest distance,
+            for source/target boundary nodes belonging to different
+            regions.
+        paths : dict
+            Nested dict: paths[source][target] = ordered list of node
+            IDs, for the same source/target pairs.
+        """
+        boundary_nodes_by_region = self.boundary_nodes
+
+        distances = {}
+        paths = {}
+
+        # process one region at a time so we can exclude that region's
+        # own boundary nodes from its targets
+        for region, nodes in boundary_nodes_by_region.items():
+
+            # boundary nodes of every other region
+            other_targets = [
+                node_id
+                for other_region, other_nodes in boundary_nodes_by_region.items()
+                if other_region != region
+                for node_id in other_nodes
+            ]
+
+            region_distances, region_paths = self.multi_source_dijkstra(
+                sources=nodes,
+                targets=other_targets,
+                weight=weight
+            )
+
+            distances.update(region_distances)
+            paths.update(region_paths)
+
+        return distances, paths
+
+
     # ------------------------------------------------------
     # PROTECTED METHODS
     # ------------------------------------------------------

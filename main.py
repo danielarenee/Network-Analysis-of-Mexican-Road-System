@@ -155,7 +155,7 @@ nodes_gdf.to_file(TESTS_DIR / "results_original_graph_nodes.gpkg", driver = "GPK
 edges_gdf.to_file(TESTS_DIR / "Results_original_graph_edges.gpkg", driver = "GPKG")
 
 
-# SINTER-REGION DISTANCE MATRIX 
+# INTER-REGION DISTANCE MATRIX 
 
 """
 print(f"[5/5] Computing inter-region distance matrix (this may take a while)...")
