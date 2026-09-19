@@ -10,6 +10,7 @@ __pycache__/
 data/raw/rnc2025.gpkg
 data/processed/roads.gpkg
 data/processed/unions.gpkg
+data/processed/road_network.pkl
 
 # ignore SQLite/GeoPackage temporary files
 *.gpkg-shm
