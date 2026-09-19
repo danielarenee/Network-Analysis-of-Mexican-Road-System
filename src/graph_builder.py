@@ -30,11 +30,12 @@ def create_road_network(roads, unions):
     # Create and add nodes in bulk
     print("Creating nodes list...")
     nodes = [
-        (node_id, {"x": geom.x, "y": geom.y, "id_polygon": idx})
-        for node_id, geom, idx in zip(
+        (node_id, {"x": geom.x, "y": geom.y, "id_polygon": idx, "ent": ent})
+        for node_id, geom, idx, ent in zip(
             unions["ID_UNION"],
             unions["geometry"],
-            unions["id_convex"]
+            unions["id_convex"],
+            unions["CVE_ENT"]
         )
     ]
     print("Adding nodes...")
@@ -99,30 +100,41 @@ roads_path = BASE_DIR / "data" / "processed" / "roads.gpkg"
 graph_save_path = BASE_DIR / "data" / "processed"
 
 # Import .gpkg of roads and unions
+print("Reading geospatial data...")
 unions = read_file(unions_path)
 roads = read_file(roads_path)
 
 # Create road network
+print("Building graph...")
 G = create_road_network(roads, unions)
 
 # Save graph
 save_path = graph_save_path / "road_network.pkl"
 save_path.parent.mkdir(parents=True, exist_ok=True)
-with open(graph_save_path, "wb") as f:
+print("Saving graph...")
+with open(save_path, "wb") as f:
     pickle.dump(
         G, f,
         protocol = pickle.HIGHEST_PROTOCOL
         )
-"""
+
 for i in range(1, 33):
+    print(f"Extracting subraph {i}")
+    ent = str(i).zfill(2)
+
     nodes = [
-        v for v in G.vs() if v["CVE_ENT"] == i 
-        ]
-    H = G.subgraph(nodes)
-    save_path = graph_save_path / f"road_network_{i}.pkl"
-    with open(graph_save_path, "wb") as f:
+        node
+        for node, attributes in G.nodes(data=True)
+        if str(attributes.get("ent")).zfill(2) == ent
+    ]
+
+    H = G.subgraph(nodes).copy()
+
+    print(f"Saving subraph {i}")
+    save_path = graph_save_path / f"road_network_{ent}.pkl"
+    
+    with open(save_path, "wb") as f:
         pickle.dump(
             H, f,
             protocol = pickle.HIGHEST_PROTOCOL
             )
-        """
