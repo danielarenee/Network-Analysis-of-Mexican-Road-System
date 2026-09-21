@@ -76,7 +76,12 @@ class Road_Network:
     def n_boundary(self):
         """Return the total number of boundary nodes."""
         return sum(len(v) for v in self.__boundary_nodes.values())
-    
+ 
+    @property
+    def node_to_ig(self):
+        if self.__node_to_ig is None:
+            self.__node_to_ig = {node_id: i for i, node_id in enumerate(self.__ig_graph.vs["node_id"])}
+        return self.__node_to_ig
     
     # ------------------------------------------------------
     # CONSTRUCTOR
@@ -109,9 +114,8 @@ class Road_Network:
         self.__boundary_nodes = None
         self.__external_nodes = None
         self.__reduced_graph = None
-        
-        self.__ig_graph = None
-        
+        self.__node_to_ig = None
+               
         # Load graph and define source-specific spatial parameters
         if source == "osmnx":
             self.__crs = "EPSG:4326"
@@ -136,6 +140,8 @@ class Road_Network:
             self.__to_undirected()
         if to_simple:
             self.__to_simple_graph()
+            
+        self.networkx_to_igraph()
         
         # Identify relevant node classes
         self.boundary_nodes
@@ -159,7 +165,11 @@ class Road_Network:
         """
         new = deepcopy(self)
         
-        simplified_graph, num_iterations = fc.simplify_iteratively(self.graph)
+        all_boundary_nodes = set().union(*self.boundary_nodes.values())
+        simplified_graph, num_iterations = fc.simplify_iteratively(
+            self.graph,
+            all_boundary_nodes
+        )
         
         new.__nx_graph = simplified_graph.copy()
         
@@ -309,7 +319,7 @@ class Road_Network:
 
         # g.vs["node_id"] has the original NetworkX node ID for every vertex
         # so we can work with igraph indexes and Nx mode_ids
-        node_to_ig = {node_id: i for i, node_id in enumerate(g.vs["node_id"])}
+        node_to_ig = self.node_to_ig
 
         # translate source node id to igraph index
         if source not in node_to_ig:
@@ -319,6 +329,9 @@ class Road_Network:
         if targets is None:
             target_ig_ids = None
         else: # same thing for target nodes
+            if isinstance(targets, int):
+                targets = [targets]
+                
             target_ig_ids = set()
             for target in targets:
                 if target not in node_to_ig:
@@ -500,6 +513,8 @@ class Road_Network:
         if kind == "nx":
             return self.__nx_graph.copy()
         elif kind == "ig":
+            if self.__ig_graph is None:
+                self.networkx_to_igraph()
             return self.__ig_graph.copy()
         else:
             raise ValueError(f"Unknown kind: {kind!r}. Use 'nx' or 'ig'.")

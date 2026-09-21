@@ -157,7 +157,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
 
     return grafo_clique
 
-def prune_degree_1(graph, min_degree=1):
+def prune_degree_1(graph, min_degree=1, protected_nodes = set()):
     """
     Iteratively prune leaf nodes (low-degree vertices) from a graph.
 
@@ -177,7 +177,9 @@ def prune_degree_1(graph, min_degree=1):
     min_degree : int, optional (default=1)
         Maximum degree threshold for pruning. Nodes with degree <= min_degree
         will be removed. Default is 1 (removes leaf nodes only).
-
+    protected_nodes : set, optional (default = set())
+        List of node IDs that cannot be removed during pruning
+        
     Returns
     -------
     H : networkx.Graph or networkx.DiGraph
@@ -206,7 +208,7 @@ def prune_degree_1(graph, min_degree=1):
     # Iteratively remove leaf nodes
     while queue:
         u = queue.popleft()
-        if Hu.degree(u) <= min_degree:
+        if Hu.degree(u) <= min_degree and u not in protected_nodes:
             nbrs = list(Hu.neighbors(u))
             H.remove_node(u)
             removed_nodes.append(u)
@@ -253,7 +255,7 @@ def combine_attr(a, b, separator=" | "):
 
     return separator.join(map(str, values))
 
-def prune_degree_2(graph):
+def prune_degree_2(graph, protected_nodes = set()):
     """
     Iteratively prune degree-2 nodes and merge their incident edges.
 
@@ -282,6 +284,8 @@ def prune_degree_2(graph):
     graph : networkx.Graph or networkx.DiGraph
         The input graph to be pruned. Can be directed or undirected.
         Edges should have 'length' and optionally 'geometry' attributes.
+    protected_nodes : set, optional (default = set())
+        List of node IDs that cannot be removed during pruning
 
     Returns
     -------
@@ -309,9 +313,9 @@ def prune_degree_2(graph):
     # Initialize queue with all degree-2 nodes
     nodes_deg_2 = [n for n, d in Hu.degree() if d == 2]
     queue = deque(nodes_deg_2)
-    in_queue = set(queue)  # Track nodes in queue to avoid duplicates
+#    in_queue = set(queue)  # Track nodes in queue to avoid duplicates
     removed_nodes = []  # List of removed nodes
-
+    
     # Iteratively remove degree-2 nodes and merge edges
     while queue:
         v = queue.popleft()
@@ -323,7 +327,7 @@ def prune_degree_2(graph):
         if Hu.degree(v) != 2:
             continue
 
-        if Hu.degree(v) == 2:
+        if Hu.degree(v) == 2 and v not in protected_nodes:
             nbrs = list(Hu.neighbors(v))  # Should be exactly u1 and u2
             if len(nbrs) != 2:
                 continue
@@ -478,7 +482,7 @@ def simplify_multiple_edges(graph, weight_attr='length'):
 
     return graph_original, graph_simplified, multiple_edges_info
 
-def simplify_iteratively(graph):
+def simplify_iteratively(graph, protected_nodes = set()):
     """
     Iteratively simplify a graph until no more changes occur.
 
@@ -524,8 +528,8 @@ def simplify_iteratively(graph):
 
         if graph.is_multigraph():
             _, graph, _ = simplify_multiple_edges(graph)
-        graph, _ = prune_degree_1(graph)
-        graph, _ = prune_degree_2(graph)
+        graph, _ = prune_degree_1(graph, protected_nodes = protected_nodes)
+        graph, _ = prune_degree_2(graph, protected_nodes = protected_nodes)
 
         iteration += 1
 

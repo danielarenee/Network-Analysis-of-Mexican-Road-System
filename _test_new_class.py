@@ -4,6 +4,7 @@ import networkx as nx
 from pathlib import Path
 
 from road_network import Road_Network
+import src.utils as fc
 
 # Get project root directory
 BASE_DIR = Path(__file__).resolve().parent
@@ -11,11 +12,12 @@ TESTS_DIR = BASE_DIR / "tests"
 
 # CONSTANTS
 SOURCE = "inegi"
-POLYGONS_PATH = BASE_DIR / "data" / "raw" / "shp" / "27l.shp"
+
+ENT = "31"
 
 # INEGI settings 
 source_kwargs_inegi = {
-    "inegi_graph_path": BASE_DIR / "data" / "processed" / "road_network.pkl"
+    "inegi_graph_path": BASE_DIR / "data" / "processed" / f"road_network_{ENT}.pkl"
     }
 
 # DATA LOADING AND PREPROCESSING
@@ -39,21 +41,7 @@ print(f"    Localities: {len(road.boundary_nodes):,}")
 # Visualization
 road.plot_labeled_network()
 
-# CLIQUE GRAPH CONSTRUCTION
-
-print(f"[3/5] Building locality cliques (this may take several minutes)...")
-t0 = time.time()
-
-road.reduce_city_subraphs()
-print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1f}s)")
-print(f"    Reduced graph: {road.reduced_graph.order():,} nodes, {road.reduced_graph.size():,} edges ({time.time()-t0:.1f}s)")
-
-# --- Visualization ---
-road.plot_boundary_nodes_network()
-
-
 # ITERATIVE GRAPH SIMPLIFICATION
-
 print(f"[4/5] Simplifying graph iteratively...")
 t0 = time.time()
 
@@ -66,19 +54,30 @@ print(f"    Boundary nodes: {simplified_graph.n_boundary:,}")
 
 simplified_graph.plot_labeled_network()
 
-road.networkx_to_igraph()
-simplified_graph.networkx_to_igraph()
 
-#path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
-path = "C:\\Users\\Saib\\Documents\\Zoom\\"
+simplified_graph.networkx_to_igraph()
+path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+d, p, R, F, contador, final_time = simplified_graph.voronoi_dijkstra()
+nodes_gdf, edges_gdf = simplified_graph.to_gdf(R=R, d=d)
+nodes_gdf.to_file(path + f"simplified_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(path + f"simplified_e_{ENT}.gpkg", driver = "GPKG")
+
 
 d, p, R, F, contador, final_time = road.voronoi_dijkstra()
 nodes_gdf, edges_gdf = road.to_gdf(R=R, d=d)
-nodes_gdf.to_file(path + "road_n.gpkg", driver = "GPKG", index=False)
-edges_gdf.to_file(path + "road_e.gpkg", driver = "GPKG", index=False)
+nodes_gdf.to_file(path + f"road_n_{ENT}.gpkg", driver = "GPKG", index=False)
+edges_gdf.to_file(path + f"road_e_{ENT}.gpkg", driver = "GPKG", index=False)
 
+#%%%
+"""
+# CLIQUE GRAPH CONSTRUCTION
+print(f"[3/5] Building locality cliques (this may take several minutes)...")
+t0 = time.time()
 
-d, p, R, F, contador, final_time = simplified_graph.voronoi_dijkstra()
-nodes_gdf, edges_gdf = simplified_graph.to_gdf(R=R, d=d)
-nodes_gdf.to_file(path + "simplified_n.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + "simplified_e.gpkg", driver = "GPKG")
+road.reduce_city_subraphs()
+print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1f}s)")
+print(f"    Reduced graph: {road.reduced_graph.order():,} nodes, {road.reduced_graph.size():,} edges ({time.time()-t0:.1f}s)")
+
+# --- Visualization ---
+road.plot_boundary_nodes_network()
+"""
