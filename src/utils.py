@@ -818,7 +818,7 @@ def load_and_preprocess_graph(
     return graph, gdf_nodes_labeled, gdf_localities, cvegeo_map, crs, plot_margin
 
 
-def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="osmnx"):
+def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="osmnx", title=""):
     """
     Plot the labeled road network.
     """
@@ -834,11 +834,9 @@ def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="
         if gdf_localities is not None:
             gdf_localities.boundary.plot(ax=ax, color="red")
         gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="Set2")
-        ax.set_title("Ernesto Aguirre, Tabasco - Labeled Road Network",
-                     fontsize=16, color="white")
     elif source == "inegi":
         gdf_nodes_labeled.plot(ax=ax, column="CVEGEO", cmap="tab20", markersize=1)
-        ax.set_title("INEGI - Initial Road Network", fontsize=16, color="white")
+    ax.set_title(title, fontsize=16, color="white")
     plt.show()
 
 

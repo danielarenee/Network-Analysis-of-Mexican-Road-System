@@ -77,7 +77,7 @@ class Road_Network:
     @property
     def n_internal(self):
         """Return the number of non-external nodes."""
-        return self.n - self.n_external
+        return self.n_inner +  self.n_boundary
     
     @property
     def n_inner(self):
@@ -155,12 +155,8 @@ class Road_Network:
             self.__to_simple_graph()
             
         self.networkx_to_igraph()
-        
-        # Identify relevant node classes
-        self.boundary_nodes
-        self.region_nodes
-        self.inner_nodes
-        self.external_nodes
+        self.__compute_node_classifications()
+
 
 
     # ------------------------------------------------------
@@ -186,21 +182,39 @@ class Road_Network:
         )
         
         new.__nx_graph = simplified_graph.copy()
-        
+        new.networkx_to_igraph()
         # Recompute node classifications after changing topology
-        new.__boundary_nodes = new.__compute_boundary_nodes()
-        new.__region_nodes = new.__compute_region_nodes()
-        new.__external_nodes = new.__compute_external_nodes()
+        new.__compute_node_classifications()
         return new, num_iterations
     
-            
-    def plot_labeled_network(self):
+    def split(self):
+        internal = deepcopy(self)
+        external = deepcopy(self)
+        
+        internal.__nx_graph = self.__extract_internal_subgraph()
+        external.__nx_graph = self.__extract_external_subgraph()
+        
+        # Recompute node classifications after changing topology
+        internal.__region_nodes = internal.__compute_region_nodes()
+        internal.__inner_nodes = internal.__compute_inner_nodes()
+        internal.__external_nodes = internal.__compute_external_nodes()
+        
+        external.__compute_node_classifications()
+        
+        internal.networkx_to_igraph()
+        external.networkx_to_igraph()
+        
+        return internal, external
+    
+
+    def plot_labeled_network(self, title=""):
         """Plot the road network colored or labeled by locality."""
         fc.plot_labeled_network(
             graph = self.__nx_graph,
             gdf_nodes_labeled = self.__gdf_nodes_labeled,
             gdf_localities = self.__gdf_localities,
-            source  = self.__source
+            source  = self.__source,
+            title = title
         )
     
     
@@ -582,8 +596,14 @@ class Road_Network:
         return region_nodes
     
     def __compute_inner_nodes(self):
+        
+        boundary_nodes = fc.identify_boundary_nodes(
+            graph = self.__nx_graph,
+            region_map = self.__region_map,
+            external_region_id = self.__external_city_id
+        )
         inner_nodes = {
-            region: nodes - self.boundary_nodes.get(region, set())
+            region: nodes - boundary_nodes.get(region, set())
             for region, nodes in self.region_nodes.items()
         }
         return inner_nodes
@@ -593,6 +613,22 @@ class Road_Network:
         external_nodes = [
             node for node, idx in self.__nx_graph.nodes(
                 data = self.__id_city_label
-            ) if idx is self.__external_city_id
+            ) if idx == self.__external_city_id
         ]
         return external_nodes
+    
+    def __compute_node_classifications(self):
+         # Identify relevant node classes
+        self.__region_nodes = self.__compute_region_nodes()
+        self.__boundary_nodes = self.__compute_boundary_nodes()
+        self.__inner_nodes = self.__compute_inner_nodes()
+        self.__external_nodes = self.__compute_external_nodes()
+    
+    def __extract_internal_subgraph(self):
+        all_region_nodes = set().union(*self.region_nodes.values())
+        return self.graph.subgraph(all_region_nodes).copy()
+    
+    def __extract_external_subgraph(self):
+        nodes = set(self.graph.nodes) - self.all_inner_nodes
+        return self.graph.subgraph(nodes).copy()
+            

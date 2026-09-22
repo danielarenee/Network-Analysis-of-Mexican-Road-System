@@ -40,7 +40,7 @@ print(f"    Boundary nodes: {road.n_boundary:,}")
 print(f"    Inner nodes: {road.n_inner:,}")
 print(f"    Localities: {len(road.boundary_nodes):,}")
 # Visualization
-road.plot_labeled_network()
+road.plot_labeled_network("INEGI - Initial Road Network")
 
 # ITERATIVE GRAPH SIMPLIFICATION
 print(f"[2/5] Simplifying graph iteratively...")
@@ -54,8 +54,30 @@ print(f"    Internal nodes: {simplified_graph.n_internal:,}")
 print(f"    Boundary nodes: {simplified_graph.n_boundary:,}")
 print(f"    Inner nodes: {simplified_graph.n_inner:,}")
 
-simplified_graph.plot_labeled_network()
+simplified_graph.plot_labeled_network("Fully Simplified Graph")
 
+# SPLIT GRAPH 
+print("[3/5] Splitting graph into internal and external subgraphs...")
+internal_graph, external_graph = road.split()
+internal_graph.plot_labeled_network("Internal subgraphs")
+print("Internal graph")
+print(f"    External nodes: {internal_graph.n_external:,}")
+print(f"    Internal nodes: {internal_graph.n_internal:,}")
+print(f"    Boundary nodes: {internal_graph.n_boundary:,}")
+print(f"    Inner nodes: {internal_graph.n_inner:,}")
+
+external_graph.plot_labeled_network("External subgraphs")
+print("External graph")
+print(f"    External nodes: {external_graph.n_external:,}")
+print(f"    Internal nodes: {external_graph.n_internal:,}")
+print(f"    Boundary nodes: {external_graph.n_boundary:,}")
+print(f"    Inner nodes: {external_graph.n_inner:,}")
+
+path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+nodes_gdf, edges_gdf = external_graph.to_gdf()
+nodes_gdf.to_file(path + f"external_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(path + f"external_e_{ENT}.gpkg", driver = "GPKG")
+"""
 #%%%
 simplified_graph.networkx_to_igraph()
 #path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
@@ -72,7 +94,7 @@ nodes_gdf.to_file(path + f"road_n_{ENT}.gpkg", driver = "GPKG", index=False)
 edges_gdf.to_file(path + f"road_e_{ENT}.gpkg", driver = "GPKG", index=False)
 
 #%%%
-"""
+
 # CLIQUE GRAPH CONSTRUCTION
 print(f"[3/5] Building locality cliques (this may take several minutes)...")
 t0 = time.time()
