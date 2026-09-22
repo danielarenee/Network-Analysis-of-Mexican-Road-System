@@ -37,12 +37,13 @@ print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1
 print(f"    External nodes: {road.n_external:,}")
 print(f"    Internal nodes: {road.n_internal:,}")
 print(f"    Boundary nodes: {road.n_boundary:,}")
+print(f"    Inner nodes: {road.n_inner:,}")
 print(f"    Localities: {len(road.boundary_nodes):,}")
 # Visualization
 road.plot_labeled_network()
 
 # ITERATIVE GRAPH SIMPLIFICATION
-print(f"[4/5] Simplifying graph iteratively...")
+print(f"[2/5] Simplifying graph iteratively...")
 t0 = time.time()
 
 simplified_graph, num_iterations = road.simplify()
@@ -51,12 +52,14 @@ print(f"    Converged in {num_iterations} iterations → {simplified_graph.n:,} 
 print(f"    External nodes: {simplified_graph.n_external:,}")
 print(f"    Internal nodes: {simplified_graph.n_internal:,}")
 print(f"    Boundary nodes: {simplified_graph.n_boundary:,}")
+print(f"    Inner nodes: {simplified_graph.n_inner:,}")
 
 simplified_graph.plot_labeled_network()
 
-
+#%%%
 simplified_graph.networkx_to_igraph()
-path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+#path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+path = "C:\\Users\\Saib\\Documents\\Zoom\\"
 d, p, R, F, contador, final_time = simplified_graph.voronoi_dijkstra()
 nodes_gdf, edges_gdf = simplified_graph.to_gdf(R=R, d=d)
 nodes_gdf.to_file(path + f"simplified_n_{ENT}.gpkg", driver = "GPKG")

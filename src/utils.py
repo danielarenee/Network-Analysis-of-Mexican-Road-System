@@ -51,7 +51,7 @@ def euclidean_heuristic(u, v, graph):
     x2, y2 = graph.nodes[v]['x'], graph.nodes[v]['y']
     return sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
-def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=None):
+def build_locality_clique(graph, region_target, nodos_frontera, nodos_localidad=None):
     """
     Build a clique graph for a specific locality based on boundary nodes.
 
@@ -61,7 +61,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
     paths are computed using the A* algorithm with Euclidean distance heuristic.
 
     Algorithm steps:
-    1. Filter all nodes belonging to the target locality (cvgeo_target)
+    1. Filter all nodes belonging to the target locality (region_target)
     2. Extract the induced subgraph for that locality
     3. Identify boundary nodes for the locality
     4. Create a new clique graph with these boundary nodes
@@ -73,7 +73,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
     graph : networkx.Graph
         The original road network graph. Nodes must have 'CVEGEO', 'x', and 'y'
         attributes.
-    cvgeo_target : str
+    region_target : str
         The CVEGEO code (geographic identifier) of the target locality.
     nodos_frontera : dict
         Dictionary mapping CVEGEO codes to sets of boundary node IDs.
@@ -102,7 +102,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
     if nodos_localidad is None:
         nodos_localidad = [
             node_id for node_id, data in graph.nodes(data=True)
-            if data.get("CVEGEO") == cvgeo_target
+            if data.get("CVEGEO") == region_target
         ]
 
     # Step 2: Extract induced subgraph for this locality
@@ -110,7 +110,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
 
     # Step 3: Get boundary nodes for this locality
     # If locality has no boundary nodes, returns empty set
-    frontera = nodos_frontera.get(cvgeo_target, set())
+    frontera = nodos_frontera.get(region_target, set())
     frontera_lista = list(frontera)
     # Ensure boundary nodes are in the subgraph
     frontera_lista = [n for n in frontera_lista if n in subgrafo]
@@ -128,7 +128,7 @@ def build_locality_clique(graph, cvgeo_target, nodos_frontera, nodos_localidad=N
     coords = {node_id: (data["x"], data["y"]) for node_id, data in subgrafo.nodes(data=True)}
     
     edges_to_add = []
-    with tqdm(total=total_pairs, desc=f"      loc={cvgeo_target}", leave=False, disable=total_pairs <= 50) as pbar:
+    with tqdm(total=total_pairs, desc=f"      loc={region_target}", leave=False, disable=total_pairs <= 50) as pbar:
         for i in range(n):
             u = frontera_lista[i]
             # Compute shortest paths from u to all reachable nodes in subgrafo using BFS
@@ -842,29 +842,43 @@ def plot_labeled_network(graph, gdf_nodes_labeled, gdf_localities=None, source="
     plt.show()
 
 
-def identify_boundary_nodes(graph, cvegeo_map):
+def identify_boundary_nodes(graph, region_map, external_region_id = None):
     """
     Identify nodes that lie on the boundary between different localities.
     """
     from collections import defaultdict
 
-    boundary_nodes_by_locality = defaultdict(set)
+    boundary_nodes_by_region = defaultdict(set)
 
     for node in graph.nodes:
-        node_loc = cvegeo_map.get(node)
-        if node_loc is None:
+        node_loc = region_map.get(node)
+        if node_loc == external_region_id:
             continue
 
         for neighbor in graph.neighbors(node):
-            neighbor_loc = cvegeo_map.get(neighbor)
-            if neighbor_loc is None or neighbor_loc != node_loc:
-                boundary_nodes_by_locality[node_loc].add(node)
+            neighbor_loc = region_map.get(neighbor)
+            if neighbor_loc == external_region_id or neighbor_loc != node_loc:
+                boundary_nodes_by_region[node_loc].add(node)
                 break
 
-    return dict(boundary_nodes_by_locality)
+    return dict(boundary_nodes_by_region)
 
+def identify_region_nodes(graph, region_map, external_region_id = None):
+    """
+    Group nodes by region, excluding nodes assigned to the external region.
+    """
+    from collections import defaultdict
+    
+    nodes_by_region = defaultdict(set)
 
-def build_reduced_clique_graph(graph, boundary_nodes_by_locality, id_city_label):
+    for node in graph.nodes:
+        node_loc = region_map.get(node)
+        if node_loc != external_region_id:
+            nodes_by_region[node_loc].add(node)
+        
+    return dict(nodes_by_region)
+
+def build_reduced_clique_graph(graph, boundary_nodes_by_region, id_city_label):
     """
     Build a reduced graph where each locality is represented by a clique of its boundary nodes.
     """
@@ -882,14 +896,14 @@ def build_reduced_clique_graph(graph, boundary_nodes_by_locality, id_city_label)
             nodes_by_locality[loc].append(node_id)
         
     # Build the reduced clique of each locality
-    pbar = tqdm(boundary_nodes_by_locality.items(), desc="Building locality cliques")
+    pbar = tqdm(boundary_nodes_by_region.items(), desc="Building locality cliques")
     for loc, boundary_nodes in pbar:
         n_boundary = len(boundary_nodes)
         pbar.set_postfix(loc=loc, boundary_nodes=n_boundary)
         loc_nodes = nodes_by_locality.get(loc, [])
         locality_cliques.append(
             build_locality_clique(
-                graph, loc, boundary_nodes_by_locality, nodos_localidad=loc_nodes
+                graph, loc, boundary_nodes_by_region, nodos_localidad=loc_nodes
             )
         )
     reduced_graph = nx.compose_all(locality_cliques)

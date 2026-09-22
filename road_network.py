@@ -24,21 +24,28 @@ class Road_Network:
         """Return a dictionary of boundary nodes by region."""
         if self.__boundary_nodes is None:
             self.__boundary_nodes = self.__compute_boundary_nodes()
-            
-            # Map NetworkX node IDs to igraph vertex indices
-            map_node_id_to_ig = {
-                node_id: i
-                for i, node_id in enumerate(self.__nx_graph.nodes)
-            }
-            self.__boundary_nodes_ig = {
-                region: {
-                    map_node_id_to_ig[node_id]
-                    for node_id in nodes
-                }
-                for region, nodes in self.__boundary_nodes.items()
-            }
-            
         return self.__boundary_nodes
+    
+    @property
+    def all_boundary_nodes(self):
+        return set().union(*self.boundary_nodes.values())
+    
+    @property
+    def region_nodes(self):
+        """Return a dictionary of nodes by region."""
+        if self.__region_nodes is None:
+            self.__region_nodes = self.__compute_region_nodes()
+        return self.__region_nodes
+    
+    @property
+    def inner_nodes(self):
+        if self.__inner_nodes is None:
+            self.__inner_nodes = self.__compute_inner_nodes()
+        return self.__inner_nodes
+    
+    @property
+    def all_inner_nodes(self):
+        return set().union(*self.inner_nodes.values())
     
     @property
     def external_nodes(self):
@@ -73,9 +80,13 @@ class Road_Network:
         return self.n - self.n_external
     
     @property
+    def n_inner(self):
+        return len(self.all_inner_nodes)
+    
+    @property
     def n_boundary(self):
         """Return the total number of boundary nodes."""
-        return sum(len(v) for v in self.__boundary_nodes.values())
+        return len(self.all_boundary_nodes)
  
     @property
     def node_to_ig(self):
@@ -112,6 +123,8 @@ class Road_Network:
 
         self.__gdf_localities = None
         self.__boundary_nodes = None
+        self.__region_nodes = None
+        self.__inner_nodes = None
         self.__external_nodes = None
         self.__reduced_graph = None
         self.__node_to_ig = None
@@ -145,6 +158,8 @@ class Road_Network:
         
         # Identify relevant node classes
         self.boundary_nodes
+        self.region_nodes
+        self.inner_nodes
         self.external_nodes
 
 
@@ -165,16 +180,16 @@ class Road_Network:
         """
         new = deepcopy(self)
         
-        all_boundary_nodes = set().union(*self.boundary_nodes.values())
         simplified_graph, num_iterations = fc.simplify_iteratively(
-            self.graph,
-            all_boundary_nodes
+            graph = self.graph,
+            protected_nodes = self.all_boundary_nodes
         )
         
         new.__nx_graph = simplified_graph.copy()
         
         # Recompute node classifications after changing topology
         new.__boundary_nodes = new.__compute_boundary_nodes()
+        new.__region_nodes = new.__compute_region_nodes()
         new.__external_nodes = new.__compute_external_nodes()
         return new, num_iterations
     
@@ -193,11 +208,11 @@ class Road_Network:
                                     title = "Boundary Node Network by Locality"):
         """Plot the reduced network and its locality boundary nodes."""
         fc.plot_boundary_nodes_network(
-            self.__reduced_graph,
-            self.__gdf_localities, 
-            self.__plot_margin,
-            title
-            )
+            reduced_graph = self.__reduced_graph,
+            gdf_localities = self.__gdf_localities, 
+            plot_margin = self.__plot_margin,
+            title = title
+        )
         
         
     def reduce_city_subraphs(self):
@@ -211,9 +226,9 @@ class Road_Network:
         """
         if self.__reduced_graph is None:
             self.__reduced_graph = fc.build_reduced_clique_graph(
-                self.__nx_graph,
-                self.__boundary_nodes,
-                self.__id_city_label
+                graph = self.__nx_graph,
+                boundary_nodes_by_region = self.__boundary_nodes,
+                id_city_label = self.__id_city_label
             )
         return self.__reduced_graph
     
@@ -494,9 +509,9 @@ class Road_Network:
             ]
 
             region_distances, region_paths = self.multi_source_dijkstra(
-                sources=nodes,
-                targets=other_targets,
-                weight=weight
+                sources = nodes,
+                targets = other_targets,
+                weight = weight
             )
 
             distances.update(region_distances)
@@ -542,9 +557,10 @@ class Road_Network:
         """
         Identify the nodes connecting regions with external vertices or other regions..
         """
-        boundary_nodes = self.__boundary_nodes = fc.identify_boundary_nodes(
-            self.__nx_graph,
-            self.__region_map,
+        boundary_nodes = fc.identify_boundary_nodes(
+            graph = self.__nx_graph,
+            region_map = self.__region_map,
+            external_region_id = self.__external_city_id
         )
         
         # Initialize all nodes as non-boundary
@@ -556,6 +572,21 @@ class Road_Network:
                 self.__nx_graph.nodes[node]["boundary"] = True
         return boundary_nodes
     
+    def __compute_region_nodes(self):
+        """Identify the nodes that belong to each region."""
+        region_nodes = fc.identify_region_nodes(
+            graph = self.__nx_graph,
+            region_map = self.__region_map,
+            external_region_id = self.__external_city_id
+        )
+        return region_nodes
+    
+    def __compute_inner_nodes(self):
+        inner_nodes = {
+            region: nodes - self.boundary_nodes.get(region, set())
+            for region, nodes in self.region_nodes.items()
+        }
+        return inner_nodes
     
     def __compute_external_nodes(self):
         """Identify nodes assigned to the external region."""
