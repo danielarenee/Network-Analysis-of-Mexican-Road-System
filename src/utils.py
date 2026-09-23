@@ -947,6 +947,59 @@ def plot_boundary_nodes_network(reduced_graph, gdf_localities=None, plot_margin=
     plt.show()
 
 
+def plot_shortest_path(graph, path, distance, source_node, target_node, title=None):
+    """
+    Plot the road network, highlighting a shortest path between two nodes.
+    """
+    import osmnx as ox
+    import matplotlib.pyplot as plt
+    import networkx as nx
+
+    G = nx.MultiDiGraph(graph)
+
+    # Use frozensets so both (A,B) and (B,A) match — bidirectional roads share
+    # the same physical geometry but exist as two directed edges in the MultiDiGraph.
+    path_edge_set = {frozenset([a, b]) for a, b in zip(path[:-1], path[1:])}
+
+    edge_colors = [
+        "#FFD700" if frozenset([u, v]) in path_edge_set else "#333333"
+        for u, v, _ in G.edges(keys=True)
+    ]
+    edge_widths = [
+        3.0 if frozenset([u, v]) in path_edge_set else 0.5
+        for u, v, _ in G.edges(keys=True)
+    ]
+
+    G_no_geom = G.copy()
+    for _, _, data in G_no_geom.edges(data=True):
+        data.pop("geometry", None)
+
+    fig, ax = ox.plot_graph(
+        G_no_geom,
+        edge_color=edge_colors,
+        edge_linewidth=edge_widths,
+        node_size=0,
+        show=False,
+        close=False,
+        bgcolor="black",
+    )
+
+    src_x, src_y = graph.nodes[source_node]["x"], graph.nodes[source_node]["y"]
+    tgt_x, tgt_y = graph.nodes[target_node]["x"], graph.nodes[target_node]["y"]
+
+    ax.scatter(src_x, src_y, c="lime", s=8, zorder=5, label="source")
+    ax.scatter(tgt_x, tgt_y, c="red", s=8, zorder=5, label="target")
+    ax.legend(loc="upper left", fontsize=10, facecolor="#111111", labelcolor="white")
+
+    if title is None:
+        title = (
+            f"Shortest path  {source_node} → {target_node}\n"
+            f"Distance: {distance:.2f} m  |  Nodes: {len(path)}"
+        )
+    ax.set_title(title, fontsize=13, color="white")
+    plt.show()
+
+
 def plot_delaunay_triangulation(gdf_nodes_labeled, crs, title="Delaunay Triangulation of Locality Centroids"):
     """
     Compute and plot Delaunay triangulation of locality centroids.
