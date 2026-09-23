@@ -322,6 +322,16 @@ def build_voronoi_dense_graph(
            v["node_id"] for v in sub_g.vs() if v["boundary"]
            ]
         
+        frontier_indices = [node_map[node_id] for node_id in frontiers]
+        boundary_indices = [node_map[node_id] for node_id in boundaries]
+        edges_to_delete = set( 
+            sub_g.es.select(_within=frontier_indices).indices
+        )
+        edges_to_delete.update(
+            sub_g.es.select(_within=boundary_indices).indices
+        )
+        sub_g.delete_edges(list(edges_to_delete))
+        
         frontiers = list(set(frontiers + boundaries))
 
         ff_distance, ff_paths = multi_source_dijkstra(
@@ -358,7 +368,13 @@ def build_voronoi_dense_graph(
         
         clique.delete_edges(missing_edges)
         cliques[region] = clique
-            
+    
+    list_cliques = list(cliques.values())
+    if not list_cliques:
+        return ig.Graph()
+
+    voronoi_dense_graph = ig.disjoint_union(list_cliques)
+    return voronoi_dense_graph        
 
 
 """def build_voronoi_dense_graph(

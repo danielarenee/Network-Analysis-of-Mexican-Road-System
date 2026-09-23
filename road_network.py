@@ -4,7 +4,7 @@ from networkx import set_node_attributes
 
 from src.utils_2 import (load_osmnx_graph, load_inegi_graph, to_connected, 
                          to_undirected, to_simple_graph, preprocess_inegi_graph, 
-                         networkx_to_igraph, igraph_to_gdf)
+                         networkx_to_igraph, igraph_to_networkx, igraph_to_gdf)
 from src.algorithms import build_voronoi_netwkork_diagram, build_voronoi_dense_graph
 import src.utils as fc
 
@@ -205,6 +205,22 @@ class Road_Network:
         
         return internal, external
     
+    def voronoi_dense_grap(self, R, F):
+        
+        new = deepcopy(self)
+               
+        new.__ig_graph = build_voronoi_dense_graph(
+            g = self.__ig_graph,
+            R = R,
+            F = F
+        )
+        new.__ig_graph["crs"] = self.__ig_graph["crs"]
+        # Recompute node classifications after changing topology
+        new.__compute_node_classifications()
+        
+        new.igraph_to_networkx()
+        
+        return new   
 
     def plot_labeled_network(self, title=""):
         """Plot the road network colored or labeled by locality."""
@@ -254,6 +270,10 @@ class Road_Network:
                 id_city_label = self.__id_city_label,
                 )
     
+    def igraph_to_networkx(self):
+        self.__nx_graph = igraph_to_networkx(
+                ig_graph = self.__ig_graph
+            )
 
     def to_gdf(self,
                R = None,
@@ -310,9 +330,8 @@ class Road_Network:
             id_city_label = self.__id_city_label,
             external_city_id = self.__external_city_id
         )
-        return d, p, R, F, contador, final_time    
-        
-
+        return d, p, R, F, contador, final_time   
+    
     def dijkstra(self, source, targets=None, weight="length"):
         """
         Compute shortest paths from a single source node to a subset of

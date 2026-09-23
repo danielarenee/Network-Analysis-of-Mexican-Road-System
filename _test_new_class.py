@@ -13,7 +13,7 @@ TESTS_DIR = BASE_DIR / "tests"
 # CONSTANTS
 SOURCE = "inegi"
 
-ENT = "12"
+ENT = "31"
 FILE = f"road_network_{ENT}.pkl"
 
 # INEGI settings 
@@ -76,10 +76,7 @@ print(f"    Internal nodes: {external_graph.n_internal:,}")
 print(f"    Boundary nodes: {external_graph.n_boundary:,}")
 print(f"    Inner nodes: {external_graph.n_inner:,}")
 
-print("[4/5] Compute voronoi network diagram on external graph..")
-d, p, R, F, contador, final_time = external_graph.voronoi_network_diagram()
-
-path = "C:\\Users\\Saib\\Documents\\Zoom\\"
+path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
 nodes_gdf, edges_gdf = external_graph.to_gdf()
 nodes_gdf.to_file(path + f"external_n_{ENT}.gpkg", driver = "GPKG")
 edges_gdf.to_file(path + f"external_e_{ENT}.gpkg", driver = "GPKG")
@@ -88,35 +85,19 @@ nodes_gdf, edges_gdf = internal_graph.to_gdf()
 nodes_gdf.to_file(path + f"internal_n_{ENT}.gpkg", driver = "GPKG")
 edges_gdf.to_file(path + f"internal_e_{ENT}.gpkg", driver = "GPKG")
 
-external_graph.build_voronoi_dense_distance_graph(F)
+print("[4/5] Compute voronoi network diagram on external graph..")
+d, p, R, F, contador, final_time = external_graph.voronoi_network_diagram()
 
 
-"""
-#%%%
-simplified_graph.networkx_to_igraph()
-#path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
-path = "C:\\Users\\Saib\\Documents\\Zoom\\"
-d, p, R, F, contador, final_time = simplified_graph.voronoi_dijkstra()
-nodes_gdf, edges_gdf = simplified_graph.to_gdf(R=R, d=d)
-nodes_gdf.to_file(path + f"simplified_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + f"simplified_e_{ENT}.gpkg", driver = "GPKG")
+print("[5/5] Compute voronoi dense graph..")
+voronoi_dense_graph = external_graph.voronoi_dense_grap(R, F)
+voronoi_dense_graph.plot_labeled_network()
+print(f"    External nodes: {voronoi_dense_graph.n_external:,}")
+print(f"    Internal nodes: {voronoi_dense_graph.n_internal:,}")
+print(f"    Boundary nodes: {voronoi_dense_graph.n_boundary:,}")
+print(f"    Inner nodes: {voronoi_dense_graph.n_inner:,}")
 
 
-d, p, R, F, contador, final_time = road.voronoi_dijkstra()
-nodes_gdf, edges_gdf = road.to_gdf(R=R, d=d)
-nodes_gdf.to_file(path + f"road_n_{ENT}.gpkg", driver = "GPKG", index=False)
-edges_gdf.to_file(path + f"road_e_{ENT}.gpkg", driver = "GPKG", index=False)
-
-#%%%
-
-# CLIQUE GRAPH CONSTRUCTION
-print(f"[3/5] Building locality cliques (this may take several minutes)...")
-t0 = time.time()
-
-road.reduce_city_subraphs()
-print(f"    Graph loaded: {road.n:,} nodes, {road.m:,} edges ({time.time()-t0:.1f}s)")
-print(f"    Reduced graph: {road.reduced_graph.order():,} nodes, {road.reduced_graph.size():,} edges ({time.time()-t0:.1f}s)")
-
-# --- Visualization ---
-road.plot_boundary_nodes_network()
-"""
+nodes_gdf, edges_gdf = voronoi_dense_graph.to_gdf()
+nodes_gdf.to_file(path + f"vdg_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(path + f"vdg_e_{ENT}.gpkg", driver = "GPKG")
