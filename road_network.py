@@ -534,6 +534,50 @@ class Road_Network:
         return distances, paths
 
 
+    def plot_shortest_path(self, source, target, weight="length", title=None):
+        """
+        Compute the shortest path between two nodes and plot it,
+        highlighting the route on the road network.
+
+        Parameters
+        ----------
+        source
+            Source node.
+        target
+            Target node.
+        weight : str, optional
+            Edge attribute used as cost. Default 'length'.
+        title : str, optional
+            Plot title. If None, a default title with the distance and
+            node count is used.
+
+        Returns
+        -------
+        distance : float
+            Shortest distance between source and target.
+        path : list
+            Ordered list of node IDs along the shortest path.
+        """
+        distances, paths = self.dijkstra(source, targets=target, weight=weight)
+
+        if target not in paths:
+            raise ValueError(f"No path found between {source} and {target}.")
+
+        distance = distances[target]
+        path = paths[target]
+
+        fc.plot_shortest_path(
+            graph = self.__nx_graph,
+            path = path,
+            distance = distance,
+            source_node = source,
+            target_node = target,
+            title = title
+        )
+
+        return distance, path
+
+
     # ------------------------------------------------------
     # PROTECTED METHODS
     # ------------------------------------------------------
