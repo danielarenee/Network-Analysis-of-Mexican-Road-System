@@ -13,11 +13,12 @@ TESTS_DIR = BASE_DIR / "tests"
 # CONSTANTS
 SOURCE = "inegi"
 
-ENT = "31"
+ENT = "12"
+FILE = f"road_network_{ENT}.pkl"
 
 # INEGI settings 
 source_kwargs_inegi = {
-    "inegi_graph_path": BASE_DIR / "data" / "processed" / f"road_network_{ENT}.pkl"
+    "inegi_graph_path": BASE_DIR / "data" / "processed" / FILE
     }
 
 # DATA LOADING AND PREPROCESSING
@@ -30,6 +31,7 @@ road = Road_Network(
     id_city_label = "CVEGEO",
     length_attr = "length",
     keep_larger_cc = True,
+
     to_undirected = True,
     to_simple = True
     )
@@ -39,6 +41,7 @@ print(f"    Internal nodes: {road.n_internal:,}")
 print(f"    Boundary nodes: {road.n_boundary:,}")
 print(f"    Inner nodes: {road.n_inner:,}")
 print(f"    Localities: {len(road.boundary_nodes):,}")
+
 # Visualization
 road.plot_labeled_network("INEGI - Initial Road Network")
 
@@ -58,7 +61,7 @@ simplified_graph.plot_labeled_network("Fully Simplified Graph")
 
 # SPLIT GRAPH 
 print("[3/5] Splitting graph into internal and external subgraphs...")
-internal_graph, external_graph = road.split()
+internal_graph, external_graph = simplified_graph.split()
 internal_graph.plot_labeled_network("Internal subgraphs")
 print("Internal graph")
 print(f"    External nodes: {internal_graph.n_external:,}")
@@ -73,10 +76,21 @@ print(f"    Internal nodes: {external_graph.n_internal:,}")
 print(f"    Boundary nodes: {external_graph.n_boundary:,}")
 print(f"    Inner nodes: {external_graph.n_inner:,}")
 
-path = "C:\\Users\\Hector Saib\\Documents\\Zoom\\"
+print("[4/5] Compute voronoi network diagram on external graph..")
+d, p, R, F, contador, final_time = external_graph.voronoi_network_diagram()
+
+path = "C:\\Users\\Saib\\Documents\\Zoom\\"
 nodes_gdf, edges_gdf = external_graph.to_gdf()
 nodes_gdf.to_file(path + f"external_n_{ENT}.gpkg", driver = "GPKG")
 edges_gdf.to_file(path + f"external_e_{ENT}.gpkg", driver = "GPKG")
+
+nodes_gdf, edges_gdf = internal_graph.to_gdf()
+nodes_gdf.to_file(path + f"internal_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(path + f"internal_e_{ENT}.gpkg", driver = "GPKG")
+
+external_graph.build_voronoi_dense_distance_graph(F)
+
+
 """
 #%%%
 simplified_graph.networkx_to_igraph()
