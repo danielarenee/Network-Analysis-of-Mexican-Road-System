@@ -1,4 +1,9 @@
 import heapq
+import json
+import pickle
+from pathlib import Path
+import igraph as ig
+        
 from copy import deepcopy
 from networkx import set_node_attributes
 
@@ -122,7 +127,6 @@ class Road_Network:
         self.__region_nodes = None
         self.__inner_nodes = None
         self.__external_nodes = None
-        self.__reduced_graph = None
         self.__node_to_ig = None
                
         # Load graph and define source-specific spatial parameters
@@ -153,11 +157,72 @@ class Road_Network:
         self.__compute_node_classifications()
         self.networkx_to_igraph()
 
+    @classmethod
+    def load(cls, path, file):
+        
+        graph_file = Path(path) / file
+        metadata_file = graph_file.with_suffix(".txt")
+        metadata = json.loads(
+            metadata_file.read_text(encoding="utf-8")
+        )
+          
+        new = cls.__new__(cls)
 
+        new.__source = metadata["source"]
+        new.__id_city_label = metadata["id_city_label"]
+        new.__external_city_id = metadata["external_city_id"]
+        new.__length_attr = metadata["length_attr"]
+        new.__region_map = metadata["region_map"]
 
+        new.__plot_margin = (
+            0.002 if new.__source == "osmnx" else
+            500 if new.__source == "inegi" else None
+        )
+        new.__boundary_nodes = None
+        new.__region_nodes = None
+        new.__inner_nodes = None
+        new.__external_nodes = None
+        new.__node_to_ig = None
+        
+        with graph_file.open("rb") as handle:
+            ig_graph = pickle.load(handle)
+        new.__ig_graph = ig_graph
+        new.node_to_ig
+        new.__crs = (
+            ig_graph["crs"] if "crs" in ig_graph.attributes() else None
+        )       
+        new.igraph_to_networkx()
+        new.__compute_node_classifications()
+        return new
+        
     # ------------------------------------------------------
     # PUBLIC METHODS
     # ------------------------------------------------------
+    def save(self, path, file):   
+        graph_file = Path(path) / file
+        metadata_file = graph_file.with_suffix(".txt")
+        
+        metadata = {
+            "source": self.__source,
+            "id_city_label": self.__id_city_label,
+            "external_city_id": self.__external_city_id,
+            "length_attr": self.__length_attr,
+            "region_map": self.__region_map
+        }
+        metadata_text = json.dumps(
+            metadata, ensure_ascii=False, indent=2
+        )
+        
+        with graph_file.open("wb") as handle:
+           pickle.dump(
+               self.__ig_graph,
+               handle,
+               protocol=pickle.HIGHEST_PROTOCOL
+           )
+           
+        metadata_file.write_text(metadata_text, encoding="utf-8")
+    
+    
     def simplify(self):
         
         """
@@ -183,6 +248,7 @@ class Road_Network:
         new.__compute_node_classifications()
         
         new.networkx_to_igraph()
+        new.node_to_ig
         
         return new, num_iterations
     
@@ -203,24 +269,38 @@ class Road_Network:
         internal.networkx_to_igraph()
         external.networkx_to_igraph()
         
+        internal.node_to_ig
+        external.node_to_ig
+        
         return internal, external
     
     def voronoi_dense_grap(self, R, F):
         
-        new = deepcopy(self)
-               
-        new.__ig_graph = build_voronoi_dense_graph(
+        voronoi_dense = deepcopy(self)
+        inter_voronoi = deepcopy(self)
+            
+        voronoi_dense_graph, inter_voronoi_graph = build_voronoi_dense_graph(
             g = self.__ig_graph,
             R = R,
             F = F
         )
-        new.__ig_graph["crs"] = self.__ig_graph["crs"]
+        
+        voronoi_dense.__ig_graph = voronoi_dense_graph
+        inter_voronoi.__ig_graph = inter_voronoi_graph
+        
+        voronoi_dense.__ig_graph["crs"] = self.__ig_graph["crs"]
+        inter_voronoi.__ig_graph["crs"] = self.__ig_graph["crs"]
         # Recompute node classifications after changing topology
-        new.__compute_node_classifications()
+        voronoi_dense.__compute_node_classifications()
+        inter_voronoi.__compute_node_classifications()
         
-        new.igraph_to_networkx()
+        voronoi_dense.igraph_to_networkx()
+        inter_voronoi.igraph_to_networkx()
         
-        return new   
+        voronoi_dense.node_to_ig
+        inter_voronoi.node_to_ig
+        
+        return voronoi_dense,  inter_voronoi
 
     def plot_labeled_network(self, title=""):
         """Plot the road network colored or labeled by locality."""
@@ -682,9 +762,27 @@ class Road_Network:
     
     def __extract_internal_subgraph(self):
         all_region_nodes = set().union(*self.region_nodes.values())
-        return self.graph.subgraph(all_region_nodes).copy()
+        g = self.graph.subgraph(all_region_nodes).copy()
+        
+        deleted_edges = []
+        for u, v in g.edges():
+            if g.nodes[u][self.__id_city_label] != g.nodes[v][self.__id_city_label]:
+                deleted_edges.append((u, v))
+        g.remove_edges_from(deleted_edges)
+        
+        return g
     
     def __extract_external_subgraph(self):
         nodes = set(self.graph.nodes) - self.all_inner_nodes
-        return self.graph.subgraph(nodes).copy()
+        g =  self.graph.subgraph(nodes).copy()
+        
+        deleted_edges = []
+        for u, v in g.edges():
+            label_u = g.nodes[u][self.__id_city_label]
+            label_v = g.nodes[v][self.__id_city_label] 
+            if label_u == label_v and label_u != self.__external_city_id:
+                deleted_edges.append((u, v))
+        g.remove_edges_from(deleted_edges)
+        
+        return g
             

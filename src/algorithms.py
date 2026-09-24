@@ -321,17 +321,7 @@ def build_voronoi_dense_graph(
         boundaries = [
            v["node_id"] for v in sub_g.vs() if v["boundary"]
            ]
-        
-        frontier_indices = [node_map[node_id] for node_id in frontiers]
-        boundary_indices = [node_map[node_id] for node_id in boundaries]
-        edges_to_delete = set( 
-            sub_g.es.select(_within=frontier_indices).indices
-        )
-        edges_to_delete.update(
-            sub_g.es.select(_within=boundary_indices).indices
-        )
-        sub_g.delete_edges(list(edges_to_delete))
-        
+                
         frontiers = list(set(frontiers + boundaries))
 
         ff_distance, ff_paths = multi_source_dijkstra(
@@ -374,62 +364,26 @@ def build_voronoi_dense_graph(
         return ig.Graph()
 
     voronoi_dense_graph = ig.disjoint_union(list_cliques)
-    return voronoi_dense_graph        
-
-
-"""def build_voronoi_dense_graph(
-        g : ig.Graph,
-        R : dict,
-        F : list,
-        weight = "length"
-        ):
-    from tqdm import tqdm
     
-    node_ids = g.vs["node_id"]
     
-    nodes_by_voronoi = defaultdict(list)
-    frontier_by_voronoi = defaultdict(list)
+    frontier_indices = [
+        v
+        for vertices in frontier_by_voronoi.values()
+        for v in vertices
+    ]
+    inter_voronoi_graph = g.induced_subgraph(frontier_indices)
+    node_map = {node_id: i for i, node_id in enumerate(node_ids)}
     
-    for v, region in enumerate(R):
-        nodes_by_voronoi[region].append(v)
-        if F[v]:
-            frontier_by_voronoi[region].append(v)
-    
-    ff_distances_by_voronoi  = {}
-    ff_path_by_voronoi  = {}
-    
-    fb_distances_by_voronoi  = {}
-    fb_path_by_voronoi  = {}
-    
-    for voronoi, nodes in tqdm(nodes_by_voronoi.items()):
-        frontiers = [
-            node_ids[v]
-            for v in frontier_by_voronoi[voronoi]
-        ]
-       
-        sub_g = g.induced_subgraph(nodes)
-        node_map = {node_id: i for i, node_id in enumerate(sub_g.vs["node_id"])}
+    delete_edges = []
+    for e in inter_voronoi_graph.es():
+        u = e.source
+        v = e.target
         
-        ff_distance, ff_paths = multi_source_dijkstra(
-                g = sub_g,
-                node_map = node_map,
-                sources = frontiers,
-                targets = frontiers,
-                weight = weight,
-            )
-        ff_distances_by_voronoi[voronoi] = ff_distance
-        ff_path_by_voronoi[voronoi] = ff_paths
+        u_id = inter_voronoi_graph.vs[u]["node_id"]
+        v_id = inter_voronoi_graph.vs[v]["node_id"]
         
-        boundaries = [
-            v["node_id"] for v in sub_g.vs() if v["boundary"]
-            ]
-        fb_distances, fb_paths = multi_source_dijkstra(
-            g = sub_g,
-            node_map = node_map,
-            sources = frontiers,
-            targets = boundaries,
-            weight=weight,
-        )
-        fb_distances_by_voronoi[voronoi] = fb_distances
-        fb_path_by_voronoi[voronoi] = fb_paths
-  """      
+        if R[node_map[u_id]] == R[node_map[v_id]]:
+            delete_edges.append(e)
+    inter_voronoi_graph.delete_edges(delete_edges)
+    
+    return voronoi_dense_graph, inter_voronoi_graph
