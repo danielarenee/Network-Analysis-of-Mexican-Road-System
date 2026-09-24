@@ -223,11 +223,20 @@ class Road_Network:
         metadata_file.write_text(metadata_text, encoding="utf-8")
     
     
-    def simplify(self):
-        
+    def simplify(self, protect_boundary_nodes = True):
+
         """
         Iteratively simplify the road network.
-         
+
+        Parameters
+        ----------
+        protect_boundary_nodes : bool, optional (Default: True)
+            If True, the boundary nodes already identified on this graph are
+            protected from removal, so region boundaries stay anchored to
+            the same nodes. If False, simplification runs unconstrained and
+            boundary/region nodes are (re)classified afterward, from
+            scratch, on the resulting simplified topology.
+
         Returns
         -------
         Road_Network
@@ -236,12 +245,14 @@ class Road_Network:
             Number of simplification iterations performed.
         """
         new = deepcopy(self)
-        
+
+        protected_nodes = self.all_boundary_nodes if protect_boundary_nodes else set()
+
         simplified_graph, num_iterations = fc.simplify_iteratively(
             graph = self.graph,
-            protected_nodes = self.all_boundary_nodes
+            protected_nodes = protected_nodes
         )
-        
+
         new.__nx_graph = simplified_graph.copy()
         
         # Recompute node classifications after changing topology
@@ -251,7 +262,7 @@ class Road_Network:
         new.node_to_ig
         
         return new, num_iterations
-    
+
     def split(self):
         internal = deepcopy(self)
         external = deepcopy(self)
