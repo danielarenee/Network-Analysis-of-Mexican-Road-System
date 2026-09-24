@@ -1,5 +1,4 @@
 import heapq
-import json
 import pickle
 import warnings
 
@@ -268,7 +267,7 @@ class Road_Network:
         """
         protected_nodes = self.all_boundary_nodes if protect_boundary_nodes else set()
 
-        simplified_graph, num_iterations = fc.simplify_iteratively(
+        simplified_graph, num_iterations, t = fc.simplify_iteratively(
             graph = self.__nx_graph,
             protected_nodes = protected_nodes
         )
@@ -276,7 +275,7 @@ class Road_Network:
         new = copy(self)
         new.__set_nx_graph(simplified_graph)
         
-        return new, num_iterations
+        return new, num_iterations, t
 
     def split(self):
         internal_graph  = self.__extract_internal_subgraph()

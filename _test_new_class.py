@@ -1,14 +1,11 @@
 # Packages
 import time
-import networkx as nx
 from pathlib import Path
 
 from road_network import Road_Network
-import src.utils as fc
 
 # Get project root directory
 BASE_DIR = Path(__file__).resolve().parent
-TESTS_DIR = BASE_DIR / "tests"
 
 # CONSTANTS
 SOURCE = "inegi"
@@ -50,7 +47,7 @@ road.plot_labeled_network("INEGI - Initial Road Network")
 print(f"[2/5] Simplifying graph iteratively...")
 t0 = time.time()
 
-simplified_graph, num_iterations = road.simplify()
+simplified_graph, num_iterations, t = road.simplify()
 
 print(f"    Converged in {num_iterations} iterations → {simplified_graph.n:,} nodes, {simplified_graph.m:,} edges ({time.time()-t0:.1f}s)")
 print(f"    External nodes: {simplified_graph.n_external:,}")

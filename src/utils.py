@@ -513,6 +513,8 @@ def simplify_iteratively(graph, protected_nodes = set()):
         The fully simplified graph after reaching a fixed point.
     num_iterations : int
         The number of iterations performed before convergence.
+    t : float
+        
 
     Notes
     -----
@@ -520,7 +522,8 @@ def simplify_iteratively(graph, protected_nodes = set()):
 
     """
     graph = graph.copy()
-
+    
+    start = time.time()
     iteration = 0
     while True:
         nodes_before = graph.number_of_nodes()
@@ -539,8 +542,9 @@ def simplify_iteratively(graph, protected_nodes = set()):
 
         if nodes_after == nodes_before and edges_after == edges_before:
             break
+    t = time.time() - start
 
-    return graph, iteration
+    return graph, iteration, t
 
 def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
     """
