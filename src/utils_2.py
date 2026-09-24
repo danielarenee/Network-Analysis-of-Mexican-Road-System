@@ -178,6 +178,39 @@ def to_simple_graph(graph, length_attr="length"):
             simple_graph[u][v].update(attr)            
     return simple_graph
 
+def igraph_to_networkx(
+        ig_graph: ig.Graph
+        ) -> nx.Graph:
+    """Convert an igraph.Graph to NetworkX representation."""
+    directed = ig_graph.is_directed()
+    multiple = ig_graph.has_multiple()
+
+    if directed:
+        nx_graph = nx.MultiDiGraph() if multiple else nx.DiGraph()
+    else:
+        nx_graph = nx.MultiGraph() if multiple else nx.Graph()
+
+    node_ids = ig_graph.vs["node_id"]
+
+    if len(set(node_ids)) != len(node_ids):
+        raise ValueError("'node_id' values ​​must be unique.")
+
+    for vertex, node_id in zip(ig_graph.vs, node_ids):
+        attributes = vertex.attributes()
+        attributes.pop("node_id")  
+        nx_graph.add_node(node_id, **attributes)
+
+    for edge in ig_graph.es:
+        source = node_ids[edge.source]
+        target = node_ids[edge.target]
+        nx_graph.add_edge(source, target, **edge.attributes())
+
+    nx_graph.graph.update({
+        attribute: ig_graph[attribute]
+        for attribute in ig_graph.attributes()
+    })
+
+    return nx_graph
 
 def networkx_to_igraph(
         nx_graph: nx.Graph,
