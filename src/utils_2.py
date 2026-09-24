@@ -82,9 +82,9 @@ def to_connected(graph):
         
     # Extract largest component
     larger_cc_nodes = max(cc, key=len)
-    graph_connected = graph.subgraph(larger_cc_nodes).copy()
+    graph_connected = graph.subgraph(larger_cc_nodes)
     
-    return graph_connected
+    return graph_connected.copy()
 
 
 def to_undirected(graph):
@@ -124,7 +124,7 @@ def to_undirected(graph):
         for u, v, attr in graph.edges(data=True):
             graph_undirected.add_edge(u, v, **attr)
     
-    return graph_undirected
+    return graph_undirected.copy()
 
 
 def to_simple_graph(graph, length_attr="length"):
@@ -176,7 +176,7 @@ def to_simple_graph(graph, length_attr="length"):
         if candidate_length < current_length:
             simple_graph[u][v].clear()
             simple_graph[u][v].update(attr)            
-    return simple_graph
+    return simple_graph.copy()
 
 def igraph_to_networkx(
         ig_graph: ig.Graph

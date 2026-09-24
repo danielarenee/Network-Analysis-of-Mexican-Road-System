@@ -1,17 +1,15 @@
 import heapq
 import json
 import pickle
+import warnings
+
 from pathlib import Path
-import igraph as ig
-        
-from copy import deepcopy
+from copy import copy
 from networkx import set_node_attributes
 
-from src.utils_2 import (load_osmnx_graph, load_inegi_graph, to_connected, 
-                         to_undirected, to_simple_graph, preprocess_inegi_graph, 
-                         networkx_to_igraph, igraph_to_networkx, igraph_to_gdf)
 from src.algorithms import build_voronoi_netwkork_diagram, build_voronoi_dense_graph
 import src.utils as fc
+import src.utils_2 as graph_utils
 
 
 class Road_Network:
@@ -53,12 +51,12 @@ class Road_Network:
     
     @property
     def all_boundary_nodes(self):
-        return set().union(*self.boundary_nodes.values())
+        return frozenset().union(*self.boundary_nodes.values())
     
     
     @property
     def all_inner_nodes(self):
-        return set().union(*self.inner_nodes.values())
+        return frozenset().union(*self.inner_nodes.values())
        
     @property
     def n(self):
@@ -92,7 +90,11 @@ class Road_Network:
     @property
     def node_to_ig(self):
         if self.__node_to_ig is None:
-            self.__node_to_ig = {node_id: i for i, node_id in enumerate(self.__ig_graph.vs["node_id"])}
+            self.__node_to_ig = {
+                node_id: i 
+                for i, node_id 
+                in enumerate(self.__ig_graph.vs["node_id"])
+            }
         return self.__node_to_ig
     
     # ------------------------------------------------------
@@ -121,25 +123,27 @@ class Road_Network:
         self.__id_city_label = id_city_label
         self.__external_city_id = external_city_id
         self.__length_attr = length_attr
+        
+        self.__nx_graph = None
+        self.__ig_graph = None
 
         self.__gdf_localities = None
+        self.__gdf_nodes_labeled = None
+        
         self.__boundary_nodes = None
         self.__region_nodes = None
         self.__inner_nodes = None
         self.__external_nodes = None
+        
         self.__node_to_ig = None
                
         # Load graph and define source-specific spatial parameters
-        if source == "osmnx":
-            self.__crs = "EPSG:4326"
-            self.__nx_graph = load_osmnx_graph(**source_kwargs)
-            self.__plot_margin = 0.002
-        elif source == "inegi":
+        if source == "inegi":
             self.__crs = "EPSG:6372"
             self.__plot_margin = 500  # meters
-            self.__nx_graph = load_inegi_graph(**source_kwargs)
-            self.__gdf_nodes_labeled, self.__region_map = preprocess_inegi_graph(
-                self.__nx_graph,
+            graph = graph_utils.load_inegi_graph(**source_kwargs)
+            self.__gdf_nodes_labeled, self.__region_map = graph_utils.preprocess_inegi_graph(
+                graph,
                 self.__id_city_label,
                 self.__crs
             )
@@ -148,59 +152,76 @@ class Road_Network:
         
         # Normalize graph topology
         if keep_larger_cc:
-            self.__to_connected()
+            graph = graph_utils.to_connected(graph)
+        
         if to_undirected:
-            self.__to_undirected()
+            graph = graph_utils.to_undirected(graph)
+        
         if to_simple:
-            self.__to_simple_graph()
+            graph = graph_utils.to_simple_graph(
+                graph,
+                self.__length_attr,
+            )
 
-        self.__compute_node_classifications()
-        self.networkx_to_igraph()
+        self.__set_nx_graph(graph)
 
+    # ------------------------------------------------------
+    # CLASS METHODS
+    # ------------------------------------------------------
     @classmethod
     def load(cls, path, file):
         
         graph_file = Path(path) / file
-        metadata_file = graph_file.with_suffix(".txt")
-        metadata = json.loads(
-            metadata_file.read_text(encoding="utf-8")
-        )
-          
+        metadata_file = graph_file.with_suffix(".meta.pkl")
+        
+        # Load metadata
+        with metadata_file.open("rb") as handle:
+            metadata = pickle.load(handle)
+            
+        # Load igraph representation
+        with graph_file.open("rb") as handle:
+            ig_graph = pickle.load(handle)
+        
+        # Create a new instance
         new = cls.__new__(cls)
 
+        # Restore persistent configuration
         new.__source = metadata["source"]
         new.__id_city_label = metadata["id_city_label"]
         new.__external_city_id = metadata["external_city_id"]
         new.__length_attr = metadata["length_attr"]
         new.__region_map = metadata["region_map"]
-
-        new.__plot_margin = (
-            0.002 if new.__source == "osmnx" else
-            500 if new.__source == "inegi" else None
-        )
-        new.__boundary_nodes = None
-        new.__region_nodes = None
-        new.__inner_nodes = None
-        new.__external_nodes = None
-        new.__node_to_ig = None
-        
-        with graph_file.open("rb") as handle:
-            ig_graph = pickle.load(handle)
-        new.__ig_graph = ig_graph
-        new.node_to_ig
         new.__crs = (
-            ig_graph["crs"] if "crs" in ig_graph.attributes() else None
-        )       
-        new.igraph_to_networkx()
-        new.__compute_node_classifications()
-        return new
+            ig_graph["crs"]
+            if "crs" in ig_graph.attributes()
+            else None
+        )
+
+        new.__gdf_localities = None
+        new.__gdf_nodes_labeled = None
+        new.__plot_margin = None
         
+        # Initialize graph representations
+        new.__nx_graph = None
+        new.__ig_graph = None
+    
+        new.__gdf_localities = None
+        new.__gdf_nodes_labeled = None
+    
+        new.__invalidate_graph_caches()
+        
+        # Rebuild synchronized graph representations and classifications
+        new.__set_ig_graph(ig_graph)
+        return new
+           
     # ------------------------------------------------------
     # PUBLIC METHODS
     # ------------------------------------------------------
     def save(self, path, file):   
+        """Save the road network and the metadata required to rebuild it."""
+        
         graph_file = Path(path) / file
-        metadata_file = graph_file.with_suffix(".txt")
+        metadata_file = graph_file.with_suffix(".meta.pkl")
         
         metadata = {
             "source": self.__source,
@@ -209,9 +230,12 @@ class Road_Network:
             "length_attr": self.__length_attr,
             "region_map": self.__region_map
         }
-        metadata_text = json.dumps(
-            metadata, ensure_ascii=False, indent=2
-        )
+        with metadata_file.open("wb") as handle:
+            pickle.dump(
+                metadata,
+                handle,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
         
         with graph_file.open("wb") as handle:
            pickle.dump(
@@ -219,9 +243,7 @@ class Road_Network:
                handle,
                protocol=pickle.HIGHEST_PROTOCOL
            )
-           
-        metadata_file.write_text(metadata_text, encoding="utf-8")
-    
+
     
     def simplify(self, protect_boundary_nodes = True):
 
@@ -244,77 +266,57 @@ class Road_Network:
         int
             Number of simplification iterations performed.
         """
-        new = deepcopy(self)
-
         protected_nodes = self.all_boundary_nodes if protect_boundary_nodes else set()
 
         simplified_graph, num_iterations = fc.simplify_iteratively(
-            graph = self.graph,
+            graph = self.__nx_graph,
             protected_nodes = protected_nodes
         )
 
-        new.__nx_graph = simplified_graph.copy()
-        
-        # Recompute node classifications after changing topology
-        new.__compute_node_classifications()
-        
-        new.networkx_to_igraph()
-        new.node_to_ig
+        new = copy(self)
+        new.__set_nx_graph(simplified_graph)
         
         return new, num_iterations
 
     def split(self):
-        internal = deepcopy(self)
-        external = deepcopy(self)
+        internal_graph  = self.__extract_internal_subgraph()
+        external_graph  = self.__extract_external_subgraph()
         
-        internal.__nx_graph = self.__extract_internal_subgraph()
-        external.__nx_graph = self.__extract_external_subgraph()
+        internal = copy(self)
+        external = copy(self)
         
-        # Recompute node classifications after changing topology
-        internal.__external_nodes = internal.__compute_external_nodes()
-        internal.__region_nodes = internal.__compute_region_nodes()
-        internal.__inner_nodes = internal.__compute_inner_nodes()
-        
-        external.__compute_node_classifications()
-        
-        internal.networkx_to_igraph()
-        external.networkx_to_igraph()
-        
-        internal.node_to_ig
-        external.node_to_ig
+        internal.__set_nx_graph(internal_graph)
+        external.__set_nx_graph(external_graph)
         
         return internal, external
     
     def voronoi_dense_grap(self, R, F):
-        
-        voronoi_dense = deepcopy(self)
-        inter_voronoi = deepcopy(self)
-            
+                    
         voronoi_dense_graph, inter_voronoi_graph = build_voronoi_dense_graph(
             g = self.__ig_graph,
             R = R,
-            F = F
+            F = F,
+            weight = self.__length_attr
         )
         
-        voronoi_dense.__ig_graph = voronoi_dense_graph
-        inter_voronoi.__ig_graph = inter_voronoi_graph
+        voronoi_dense = copy(self)
+        inter_voronoi = copy(self)
         
-        voronoi_dense.__ig_graph["crs"] = self.__ig_graph["crs"]
-        inter_voronoi.__ig_graph["crs"] = self.__ig_graph["crs"]
-        # Recompute node classifications after changing topology
-        voronoi_dense.__compute_node_classifications()
-        inter_voronoi.__compute_node_classifications()
-        
-        voronoi_dense.igraph_to_networkx()
-        inter_voronoi.igraph_to_networkx()
-        
-        voronoi_dense.node_to_ig
-        inter_voronoi.node_to_ig
+        voronoi_dense.__set_ig_graph(voronoi_dense_graph)
+        inter_voronoi.__set_ig_graph(inter_voronoi_graph)
         
         return voronoi_dense,  inter_voronoi
 
     def plot_labeled_network(self, title=""):
         """Plot the road network colored or labeled by locality."""
+        
+        if self.__gdf_nodes_labeled is None:
+            warnings.warn(
+                "Geospatial data are not available.",
+                UserWarning,
+            )
+            return None
+    
         fc.plot_labeled_network(
             graph = self.__nx_graph,
             gdf_nodes_labeled = self.__gdf_nodes_labeled,
@@ -324,47 +326,34 @@ class Road_Network:
         )
     
     
-    def plot_boundary_nodes_network(self,
-                                    title = "Boundary Node Network by Locality"):
-        """Plot the reduced network and its locality boundary nodes."""
-        fc.plot_boundary_nodes_network(
-            reduced_graph = self.__reduced_graph,
-            gdf_localities = self.__gdf_localities, 
-            plot_margin = self.__plot_margin,
-            title = title
-        )
+#    def plot_boundary_nodes_network(self,
+#                                    title = "Boundary Node Network by Locality"):
+#        """Plot the reduced network and its locality boundary nodes."""
+#        fc.plot_boundary_nodes_network(
+#            reduced_graph = self.__reduced_graph,
+#            gdf_localities = self.__gdf_localities, 
+#            plot_margin = self.__plot_margin,
+#            title = title
+#        )
         
         
-    def reduce_city_subraphs(self):
-        """
-       Compute the reduced boundary-node clique graphs.
+#    def reduce_city_subraphs(self):
+#        """
+#       Compute the reduced boundary-node clique graphs.
+#
+#        Returns
+#        -------
+#        networkx.Graph
+#            Reduced representation of the original road network.
+#        """
+#        if self.__reduced_graph is None:
+#            self.__reduced_graph = fc.build_reduced_clique_graph(
+#                graph = self.__nx_graph,
+#                boundary_nodes_by_region = self.__boundary_nodes,
+#                id_city_label = self.__id_city_label
+#            )
+#        return self.__reduced_graph
 
-        Returns
-        -------
-        networkx.Graph
-            Reduced representation of the original road network.
-        """
-        if self.__reduced_graph is None:
-            self.__reduced_graph = fc.build_reduced_clique_graph(
-                graph = self.__nx_graph,
-                boundary_nodes_by_region = self.__boundary_nodes,
-                id_city_label = self.__id_city_label
-            )
-        return self.__reduced_graph
-    
-    
-    def networkx_to_igraph(self):
-        """Convert the NetworkX graph to an igraph representation."""
-        if self.__source == "inegi":
-            self.__ig_graph = networkx_to_igraph(
-                nx_graph = self.__nx_graph,
-                id_city_label = self.__id_city_label,
-                )
-    
-    def igraph_to_networkx(self):
-        self.__nx_graph = igraph_to_networkx(
-                ig_graph = self.__ig_graph
-            )
 
     def to_gdf(self,
                R = None,
@@ -385,10 +374,8 @@ class Road_Network:
             Node geometries and attributes.
         geopandas.GeoDataFrame
             Edge geometries and attributes.
-        """
-        if self.__ig_graph is None:
-            self.networkx_to_igraph()        
-        nodes_gdf, edges_gdf = igraph_to_gdf(
+        """  
+        nodes_gdf, edges_gdf = graph_utils.igraph_to_gdf(
             g = self.__ig_graph,
             crs = self.__crs,
             R = R,
@@ -423,7 +410,7 @@ class Road_Network:
         )
         return d, p, R, F, contador, final_time   
     
-    def dijkstra(self, source, targets=None, weight="length"):
+    def dijkstra(self, source, targets=None):
         """
         Compute shortest paths from a single source node to a subset of
         target nodes using a binary-heap Dijkstra over the igraph
@@ -436,8 +423,6 @@ class Road_Network:
         targets : optional (Default: None)
             Destination nodes. If None, distances are computed to every node
             reachable from the source.
-        weight : str, optional
-            Edge attribute used as cost. Default 'length'.
 
         Returns
         -------
@@ -450,10 +435,9 @@ class Road_Network:
         """
 
         # first build the igraph graph in case we havent 
-        if self.__ig_graph is None:
-            self.networkx_to_igraph()
 
         g = self.__ig_graph # g is the igraph copy
+        weight = self.__length_attr
 
         # g.vs["node_id"] has the original NetworkX node ID for every vertex
         # so we can work with igraph indexes and Nx mode_ids
@@ -550,7 +534,7 @@ class Road_Network:
         return distances, paths
 
 
-    def multi_source_dijkstra(self, sources, targets=None, weight="length"):
+    def multi_source_dijkstra(self, sources, targets=None):
         """
         Compute shortest paths from several source nodes to a subset of
         target nodes. This is just a wrapper around `dijkstra`
@@ -563,8 +547,6 @@ class Road_Network:
             Destination nodes, passed through to `dijkstra` for every
             source. If None, distances are computed to every node
             reachable from each source.
-        weight : str, optional
-            Edge attribute used as cost. Default 'length'.
 
         Returns
         -------
@@ -574,13 +556,14 @@ class Road_Network:
             Nested dict: paths[source][target] = ordered list of node
             IDs from that source to that target.
         """
+        
         # initialize dicts
         distances = {}
         paths = {}
 
         for source in sources:
             source_distances, source_paths = self.dijkstra(
-                source, targets=targets, weight=weight
+                source, targets=targets
             )
             distances[source] = source_distances
             paths[source] = source_paths
@@ -591,7 +574,7 @@ class Road_Network:
         return distances, paths
 
         
-    def boundary_distance_matrix(self, weight="length"):
+    def boundary_distance_matrix(self):
         """
         Compute shortest-path distances between boundary nodes that
         belong to different regions.
@@ -633,8 +616,7 @@ class Road_Network:
 
             region_distances, region_paths = self.multi_source_dijkstra(
                 sources = nodes,
-                targets = other_targets,
-                weight = weight
+                targets = other_targets
             )
 
             distances.update(region_distances)
@@ -643,7 +625,7 @@ class Road_Network:
         return distances, paths
 
 
-    def plot_shortest_path(self, source, target, weight="length", title=None):
+    def plot_shortest_path(self, source, target, title=None):
         """
         Compute the shortest path between two nodes and plot it,
         highlighting the route on the road network.
@@ -667,7 +649,7 @@ class Road_Network:
         path : list
             Ordered list of node IDs along the shortest path.
         """
-        distances, paths = self.dijkstra(source, targets=target, weight=weight)
+        distances, paths = self.dijkstra(source, targets=target)
 
         if target not in paths:
             raise ValueError(f"No path found between {source} and {target}.")
@@ -695,8 +677,6 @@ class Road_Network:
         if kind == "nx":
             return self.__nx_graph.copy()
         elif kind == "ig":
-            if self.__ig_graph is None:
-                self.networkx_to_igraph()
             return self.__ig_graph.copy()
         else:
             raise ValueError(f"Unknown kind: {kind!r}. Use 'nx' or 'ig'.")
@@ -704,21 +684,7 @@ class Road_Network:
     
     # ------------------------------------------------------
     # PRIVATE METHODS
-    # ------------------------------------------------------
-    def __to_connected(self):
-        """Keep only the main connected component."""
-        self.__nx_graph = to_connected(self.__nx_graph)
-        
-        
-    def __to_undirected(self):
-        """Convert the network to an undirected graph."""
-        self.__nx_graph = to_undirected(self.__nx_graph)
-        
-        
-    def __to_simple_graph(self):
-        """Convert the network to a simple graph"""
-        self.__nx_graph = to_simple_graph(self.__nx_graph, self.__length_attr)
-        
+    # ------------------------------------------------------        
     def __compute_external_nodes(self):
         """Identify nodes assigned to the external region."""
         external_nodes = [
@@ -726,7 +692,7 @@ class Road_Network:
                 data = self.__id_city_label
             ) if idx == self.__external_city_id
         ]
-        return set(external_nodes)
+        return frozenset(external_nodes)
     
     def __compute_region_nodes(self):
         """Identify the nodes that belong to each region."""
@@ -757,10 +723,11 @@ class Road_Network:
         return boundary_nodes
     
     def __compute_inner_nodes(self):
-        boundary_nodes = self.__boundary_nodes
+        boundary_nodes = self.boundary_nodes
+        region_nodes = self.region_nodes
         inner_nodes = {
             region: nodes - boundary_nodes.get(region, set())
-            for region, nodes in self.region_nodes.items()
+            for region, nodes in region_nodes.items()
         }
         return inner_nodes
     
@@ -773,7 +740,7 @@ class Road_Network:
     
     def __extract_internal_subgraph(self):
         all_region_nodes = set().union(*self.region_nodes.values())
-        g = self.graph.subgraph(all_region_nodes).copy()
+        g = self.__nx_graph.subgraph(all_region_nodes).copy()
         
         deleted_edges = []
         for u, v in g.edges():
@@ -784,8 +751,8 @@ class Road_Network:
         return g
     
     def __extract_external_subgraph(self):
-        nodes = set(self.graph.nodes) - self.all_inner_nodes
-        g =  self.graph.subgraph(nodes).copy()
+        nodes = set(self.__nx_graph.nodes) - self.all_inner_nodes
+        g =  self.__nx_graph.subgraph(nodes).copy()
         
         deleted_edges = []
         for u, v in g.edges():
@@ -796,4 +763,63 @@ class Road_Network:
         g.remove_edges_from(deleted_edges)
         
         return g
+    
+    def __invalidate_graph_caches(self):
+        """Invalidate all information derived from graph topology."""
+        self.__external_nodes = None
+        self.__region_nodes = None
+        self.__boundary_nodes = None
+        self.__inner_nodes = None
+        self.__node_to_ig = None
+
+    def __set_nx_graph(self, graph):
+        """
+        Replace NetworkX graph and synchronize igraph representation
+        """
+        self.__nx_graph = graph
+    
+        self.__invalidate_graph_caches()
+    
+        self.__compute_node_classifications()
+    
+        self.__ig_graph = graph_utils.networkx_to_igraph(
+            nx_graph=self.__nx_graph,
+            id_city_label=self.__id_city_label,
+        )
+        
+        if self.__crs is not None:
+            self.__ig_graph["crs"] = self.__crs
+    
+        self.__node_to_ig = None    
+
+    def __set_ig_graph(self, graph):
+        """
+        Replace igraph.Graph and synchronize NetworkX representation
+        """       
+        # Synchronize CRS
+        if "crs" in graph.attributes():
+            self.__crs = graph["crs"]
+        elif self.__crs is not None:
+            graph["crs"] = self.__crs
             
+        self.__ig_graph = graph
+    
+        self.__node_to_ig = None
+
+        self.__nx_graph = graph_utils.igraph_to_networkx(
+            ig_graph=self.__ig_graph,
+        )
+    
+        self.__external_nodes = None
+        self.__region_nodes = None
+        self.__boundary_nodes = None
+        self.__inner_nodes = None
+    
+        self.__compute_node_classifications()
+    
+        boundary_nodes = self.all_boundary_nodes
+    
+        self.__ig_graph.vs["boundary"] = [
+            node_id in boundary_nodes
+            for node_id in self.__ig_graph.vs["node_id"]
+        ]        

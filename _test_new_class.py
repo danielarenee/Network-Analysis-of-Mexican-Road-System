@@ -15,7 +15,7 @@ SOURCE = "inegi"
 
 ENT = "31"
 FILE = f"road_network_{ENT}.pkl"
-PATH_SAVE = Path("C:\\Users\\Saib\\Documents\\Zoom\\")
+PATH_SAVE = Path("C:\\Users\\Hector Saib\\Documents\\Zoom\\")
 
 # INEGI settings 
 source_kwargs_inegi = {
@@ -32,7 +32,6 @@ road = Road_Network(
     id_city_label = "CVEGEO",
     length_attr = "length",
     keep_larger_cc = True,
-
     to_undirected = True,
     to_simple = True
     )
@@ -47,7 +46,6 @@ road.save(PATH_SAVE, "road")
 road2 = Road_Network.load(PATH_SAVE, "road")
 # Visualization
 road.plot_labeled_network("INEGI - Initial Road Network")
-road2.plot_labeled_network("INEGI - Initial Road Network")
 # ITERATIVE GRAPH SIMPLIFICATION
 print(f"[2/5] Simplifying graph iteratively...")
 t0 = time.time()
@@ -86,14 +84,13 @@ print(f"    Total edges: {external_graph.m:,}")
 print("[4/5] Compute voronoi network diagram on external graph..")
 d, p, R, F, contador, final_time = external_graph.voronoi_network_diagram()
 
-path = "C:\\Users\\Saib\\Documents\\Zoom\\"
 nodes_gdf, edges_gdf = external_graph.to_gdf(R, d)
-nodes_gdf.to_file(path + f"external_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + f"external_e_{ENT}.gpkg", driver = "GPKG")
+nodes_gdf.to_file(PATH_SAVE / f"external_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(PATH_SAVE /  f"external_e_{ENT}.gpkg", driver = "GPKG")
 
 nodes_gdf, edges_gdf = internal_graph.to_gdf()
-nodes_gdf.to_file(path + f"internal_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + f"internal_e_{ENT}.gpkg", driver = "GPKG")
+nodes_gdf.to_file(PATH_SAVE / f"internal_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(PATH_SAVE /  f"internal_e_{ENT}.gpkg", driver = "GPKG")
 
 
 print("[5/5] Compute voronoi dense graph..")
@@ -105,8 +102,8 @@ print(f"    Boundary nodes: {voronoi_dense_graph.n_boundary:,}")
 print(f"    Inner nodes: {voronoi_dense_graph.n_inner:,}")
 print(f"    Total edges: {voronoi_dense_graph.m:,}")
 nodes_gdf, edges_gdf = voronoi_dense_graph.to_gdf()
-nodes_gdf.to_file(path + f"vdg_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + f"vdg_e_{ENT}.gpkg", driver = "GPKG")
+nodes_gdf.to_file(PATH_SAVE /  f"vdg_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(PATH_SAVE /  f"vdg_e_{ENT}.gpkg", driver = "GPKG")
 
 inter_voronoi_graph.plot_labeled_network()
 print(f"    External nodes: {inter_voronoi_graph.n_external:,}")
@@ -115,6 +112,6 @@ print(f"    Boundary nodes: {inter_voronoi_graph.n_boundary:,}")
 print(f"    Inner nodes: {inter_voronoi_graph.n_inner:,}")
 print(f"    Total edges: {inter_voronoi_graph.m:,}")
 nodes_gdf, edges_gdf = inter_voronoi_graph.to_gdf()
-nodes_gdf.to_file(path + f"inter_vor_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(path + f"inter_vor_e_{ENT}.gpkg", driver = "GPKG")
+nodes_gdf.to_file(PATH_SAVE /  f"inter_vor_n_{ENT}.gpkg", driver = "GPKG")
+edges_gdf.to_file(PATH_SAVE /  f"inter_vor_e_{ENT}.gpkg", driver = "GPKG")
 
