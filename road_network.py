@@ -162,11 +162,20 @@ class Road_Network:
     # ------------------------------------------------------
     # PUBLIC METHODS
     # ------------------------------------------------------
-    def simplify(self):
-        
+    def simplify(self, protect_boundary_nodes = True):
+
         """
         Iteratively simplify the road network.
-         
+
+        Parameters
+        ----------
+        protect_boundary_nodes : bool, optional (Default: True)
+            If True, the boundary nodes already identified on this graph are
+            protected from removal, so region boundaries stay anchored to
+            the same nodes. If False, simplification runs unconstrained and
+            boundary/region nodes are (re)classified afterward, from
+            scratch, on the resulting simplified topology.
+
         Returns
         -------
         Road_Network
@@ -175,18 +184,20 @@ class Road_Network:
             Number of simplification iterations performed.
         """
         new = deepcopy(self)
-        
+
+        protected_nodes = self.all_boundary_nodes if protect_boundary_nodes else set()
+
         simplified_graph, num_iterations = fc.simplify_iteratively(
             graph = self.graph,
-            protected_nodes = self.all_boundary_nodes
+            protected_nodes = protected_nodes
         )
-        
+
         new.__nx_graph = simplified_graph.copy()
         new.networkx_to_igraph()
         # Recompute node classifications after changing topology
         new.__compute_node_classifications()
         return new, num_iterations
-    
+
     def split(self):
         internal = deepcopy(self)
         external = deepcopy(self)
