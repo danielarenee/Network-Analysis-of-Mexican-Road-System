@@ -546,6 +546,81 @@ def simplify_iteratively(graph, protected_nodes = set()):
 
     return graph, iteration, t
 
+
+def _simplify_partition(subgraph, protected_nodes):
+    simplified, iterations, _ = simplify_iteratively(subgraph, protected_nodes)
+    return simplified, iterations
+
+
+def simplify_iteratively_parallel(graph, protected_nodes = frozenset(), n_workers = 4, n_partitions = None):
+    """
+    Parallel version of simplify_iteratively.
+
+    Nodes are split into vertical strips (equal node count, by x coordinate).
+    Each strip is simplified in its own process, protecting the nodes that
+    touch another strip so no road is cut. The strips are then merged back
+    with the edges between them, and a final sequential pass removes the
+    seam nodes that are no longer needed.
+
+    Returns
+    -------
+    simplified_graph : networkx.Graph
+    num_iterations : int
+        Iterations of the final sequential pass.
+    t : float
+        Total elapsed time in seconds.
+    """
+    from concurrent.futures import ProcessPoolExecutor, FIRST_COMPLETED, wait
+    import numpy as np
+
+    start = time.time()
+    n_partitions = n_partitions or 4 * n_workers
+
+    nodes = list(graph.nodes)
+    xs = np.fromiter((graph.nodes[n]["x"] for n in nodes), dtype=float, count=len(nodes))
+    members = [
+        [nodes[i] for i in idx]
+        for idx in np.array_split(np.argsort(xs), n_partitions)
+    ]
+    part_of = {n: p for p, part_nodes in enumerate(members) for n in part_nodes}
+
+    cut_edges = [
+        (u, v, d) for u, v, d in graph.edges(data=True)
+        if part_of[u] != part_of[v]
+    ]
+    cut_nodes = {n for u, v, _ in cut_edges for n in (u, v)}
+
+    simplified_parts = []
+    pending = set()
+    to_submit = iter(members)
+
+    # Only n_workers subgraph copies exist at once, to bound memory
+    with ProcessPoolExecutor(max_workers = n_workers) as pool, \
+         tqdm(total = n_partitions, desc = "Simplifying partitions") as pbar:
+        while True:
+            while len(pending) < n_workers:
+                part_nodes = next(to_submit, None)
+                if part_nodes is None:
+                    break
+                sub = graph.subgraph(part_nodes).copy()
+                protected = {n for n in part_nodes if n in protected_nodes or n in cut_nodes}
+                pending.add(pool.submit(_simplify_partition, sub, protected))
+            if not pending:
+                break
+            done, pending = wait(pending, return_when = FIRST_COMPLETED)
+            for future in done:
+                simplified_parts.append(future.result()[0])
+                pbar.update(1)
+
+    merged = nx.compose_all(simplified_parts)
+    merged.add_edges_from(cut_edges)
+
+    print("    Final pass over merged graph...")
+    merged, num_iterations, _ = simplify_iteratively(merged, protected_nodes)
+
+    return merged, num_iterations, time.time() - start
+
+
 def calculate_border_nodes_distance_matrix(graph, boundary_nodes_by_locality):
     """
     Compute distance matrix between border vertices of different regions.

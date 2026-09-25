@@ -244,7 +244,7 @@ class Road_Network:
            )
 
     
-    def simplify(self, protect_boundary_nodes = True):
+    def simplify(self, protect_boundary_nodes = True, n_workers = 1):
 
         """
         Iteratively simplify the road network.
@@ -257,6 +257,9 @@ class Road_Network:
             the same nodes. If False, simplification runs unconstrained and
             boundary/region nodes are (re)classified afterward, from
             scratch, on the resulting simplified topology.
+        n_workers : int, optional (Default: 1)
+            If greater than 1, simplify spatial partitions of the graph in
+            that many parallel processes (see fc.simplify_iteratively_parallel).
 
         Returns
         -------
@@ -267,10 +270,17 @@ class Road_Network:
         """
         protected_nodes = self.all_boundary_nodes if protect_boundary_nodes else set()
 
-        simplified_graph, num_iterations, t = fc.simplify_iteratively(
-            graph = self.__nx_graph,
-            protected_nodes = protected_nodes
-        )
+        if n_workers > 1:
+            simplified_graph, num_iterations, t = fc.simplify_iteratively_parallel(
+                graph = self.__nx_graph,
+                protected_nodes = protected_nodes,
+                n_workers = n_workers
+            )
+        else:
+            simplified_graph, num_iterations, t = fc.simplify_iteratively(
+                graph = self.__nx_graph,
+                protected_nodes = protected_nodes
+            )
 
         new = copy(self)
         new.__set_nx_graph(simplified_graph)
