@@ -6,7 +6,7 @@ from pathlib import Path
 from copy import copy
 from networkx import set_node_attributes
 
-from src.algorithms import build_voronoi_netwkork_diagram, build_voronoi_dense_graph
+from src.algorithms import build_voronoi_netwkork_diagram, build_voronoi_dense_graph, build_region_graph
 import src.utils as fc
 import src.utils_2 as graph_utils
 
@@ -634,6 +634,18 @@ class Road_Network:
         return distances, paths
 
 
+    def build_region_graph(self):   
+        
+        city_network = build_region_graph(
+            self.__ig_graph,
+            self.__node_to_ig,
+            self.__boundary_nodes,
+            self.__id_city_label,
+            self.__external_city_id,
+            self.__length_attr
+            )
+        return city_network
+    
     def plot_shortest_path(self, source, target, title=None):
         """
         Compute the shortest path between two nodes and plot it,

@@ -5,7 +5,7 @@ from numpy import inf
 from time import time as t
 from collections import defaultdict
 from shapely import LineString
-
+from tqdm import tqdm
 
 def dijkstra(g, node_map, source, targets=None, weight="length"):
     """
@@ -154,7 +154,6 @@ def multi_source_dijkstra(g, node_map, sources, targets=None, weight="length"):
         Nested dict: paths[source][target] = ordered list of node
         IDs from that source to that target.
     """
-    from tqdm import tqdm
     # initialize dicts
     distances = {}
     paths = {}
@@ -171,6 +170,96 @@ def multi_source_dijkstra(g, node_map, sources, targets=None, weight="length"):
     # distances {100:{200:1385.4, 300:346.3}, 250:{...}}
 
     return distances, paths
+
+
+def build_region_graph(
+        g: ig.Graph,
+        node_map,
+        boundary_nodes : dict,
+        id_city_label : str,
+        external_city_id = None,
+        weight="length"
+        ):
+    
+    region_map = {region: i for i, region in enumerate(boundary_nodes.keys())}
+    city_network = ig.Graph()
+    city_network.add_vertices(len(region_map))
+    city_network.vs["region"] = list(region_map.keys())
+    
+    for i in tqdm(boundary_nodes.keys()):
+        D, T = multi_source_region_dijkstra(
+                g = g,
+                node_map = node_map,
+                boundary_nodes = boundary_nodes,
+                i = i, 
+                id_city_label = id_city_label,
+                external_city_id = external_city_id,
+                weight = weight
+                )
+        for j, d in D.items():
+            city_network.add_edge(region_map[i], region_map[j], length=d, t = T[j])
+    
+    city_network.simplify(combine_edges="first")
+    
+    return city_network
+            
+        
+
+def multi_source_region_dijkstra(
+        g: ig.Graph,
+        node_map,
+        boundary_nodes : dict,
+        i, 
+        id_city_label : str,
+        external_city_id = None,
+        weight="length"
+        ):
+    # Number of vertices
+    n = g.vcount()
+    # List of distances
+    dist = [inf] * n
+    # List of predecessors
+    prev = [None] * n
+
+    # Initialize Priority queue
+    Q = []  
+    visited = set()
+    D = {}
+    T = {}
+            
+    for node_id in boundary_nodes[i]:
+        u = node_map[node_id]
+        dist[u] = 0
+        heapq.heappush(Q, (dist[u], u))
+        
+    while Q:
+        # Extract-min
+        d, u = heapq.heappop(Q) 
+        
+        if u in visited:
+            continue
+        
+        visited.add(u)
+        
+        region = g.vs[u][id_city_label]
+        if region not in [i, external_city_id]:
+            if region not in D:
+                D[region] = dist[u]
+                T[region] = g.vs[u]["node_id"]
+            continue
+        
+        for v in g.neighbors(u):
+            edge_id = g.get_eid(u, v)
+            w = g.es[edge_id][weight]               
+
+            new_dist = d + w
+            if new_dist < dist[v]:
+                dist[v] = new_dist
+                prev[v] = u
+                heapq.heappush(Q, (new_dist, v))
+    
+    return D, T
+
 
 
 def build_voronoi_netwkork_diagram(
@@ -294,7 +383,6 @@ def build_voronoi_dense_graph(
         F : list,
         weight = "length"
         ):
-    from tqdm import tqdm
     
     node_ids = g.vs["node_id"]
     

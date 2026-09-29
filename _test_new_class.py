@@ -10,7 +10,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # CONSTANTS
 SOURCE = "inegi"
 
-ENT = "31"
+ENT = "15"
 FILE = f"road_network_{ENT}.pkl"
 PATH_SAVE = Path("C:\\Users\\Hector Saib\\Documents\\Zoom\\")
 
@@ -39,8 +39,6 @@ print(f"    Boundary nodes: {road.n_boundary:,}")
 print(f"    Inner nodes: {road.n_inner:,}")
 print(f"    Localities: {len(road.boundary_nodes):,}")
 
-road.save(PATH_SAVE, "road")
-road2 = Road_Network.load(PATH_SAVE, "road")
 # Visualization
 road.plot_labeled_network("INEGI - Initial Road Network")
 # ITERATIVE GRAPH SIMPLIFICATION
@@ -68,7 +66,6 @@ print(f"    Boundary nodes: {internal_graph.n_boundary:,}")
 print(f"    Inner nodes: {internal_graph.n_inner:,}")
 print(f"    Total edges: {internal_graph.m:,}")
 
-
 external_graph.plot_labeled_network("External subgraphs")
 print("External graph")
 print(f"    External nodes: {external_graph.n_external:,}")
@@ -81,34 +78,80 @@ print(f"    Total edges: {external_graph.m:,}")
 print("[4/5] Compute voronoi network diagram on external graph..")
 d, p, R, F, contador, final_time = external_graph.voronoi_network_diagram()
 
-nodes_gdf, edges_gdf = external_graph.to_gdf(R, d)
-nodes_gdf.to_file(PATH_SAVE / f"external_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(PATH_SAVE /  f"external_e_{ENT}.gpkg", driver = "GPKG")
+g = external_graph._graph("ig")
+node_map = external_graph.node_to_ig
+boundary_nodes = external_graph.boundary_nodes
+boundary_nodes = external_graph._Road_Network__boundary_nodes
+id_city_label = external_graph._Road_Network__id_city_label
+external_city_id = None
 
-nodes_gdf, edges_gdf = internal_graph.to_gdf()
-nodes_gdf.to_file(PATH_SAVE / f"internal_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(PATH_SAVE /  f"internal_e_{ENT}.gpkg", driver = "GPKG")
+#%%%%
+import geopandas as gpd
+
+city_network = external_graph.build_region_graph()
+layout = city_network.layout_fruchterman_reingold(niter=2000)
+
+import igraph as ig
+ig.plot(
+    city_network,
+    layout=layout,
+    vertex_size=5,
+    bbox=(1200, 900),
+    margin=50,
+)
+
+#%%%
+path = BASE_DIR / "data" / "raw" / "LocalitiesGrouped_2020_data.gpkg"
+gdf = gpd.read_file(path)
+
+regions_list = list(city_network.vs["region"])
+gdf = gdf[gdf["id_convex"].isin(regions_list)]
+
+centroids = gpd.GeoDataFrame(
+    {
+        "id_convex": gdf["id_convex"],
+        "geometry": gdf.geometry.centroid,
+    },
+    crs=gdf.crs,
+)
+
+nodes_df = (
+        city_network.get_vertex_dataframe()
+        .rename_axis("vertex_id")
+        .reset_index()
+    )
+centros = centroids.set_index("id_convex").geometry
+
+nodes_gdf = gpd.GeoDataFrame(
+       nodes_df,
+       geometry=[centros.loc[region] for region in nodes_df["region"]],
+       crs=centroids.crs,
+   )
 
 
-print("[5/5] Compute voronoi dense graph..")
-voronoi_dense_graph, inter_voronoi_graph = external_graph.voronoi_dense_grap(R, F)
-voronoi_dense_graph.plot_labeled_network()
-print(f"    External nodes: {voronoi_dense_graph.n_external:,}")
-print(f"    Internal nodes: {voronoi_dense_graph.n_internal:,}")
-print(f"    Boundary nodes: {voronoi_dense_graph.n_boundary:,}")
-print(f"    Inner nodes: {voronoi_dense_graph.n_inner:,}")
-print(f"    Total edges: {voronoi_dense_graph.m:,}")
-nodes_gdf, edges_gdf = voronoi_dense_graph.to_gdf()
-nodes_gdf.to_file(PATH_SAVE /  f"vdg_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(PATH_SAVE /  f"vdg_e_{ENT}.gpkg", driver = "GPKG")
+from shapely.geometry import LineString
+edges_df = (
+        city_network.get_edge_dataframe()
+        .rename_axis("edge_id")
+        .reset_index()
+    )
+coords = [(point.x, point.y) for point in nodes_gdf.geometry]
+lines = [
+    LineString([coords[u], coords[v]])
+    for u, v in zip(edges_df["source"], edges_df["target"])
+]
 
-inter_voronoi_graph.plot_labeled_network()
-print(f"    External nodes: {inter_voronoi_graph.n_external:,}")
-print(f"    Internal nodes: {inter_voronoi_graph.n_internal:,}")
-print(f"    Boundary nodes: {inter_voronoi_graph.n_boundary:,}")
-print(f"    Inner nodes: {inter_voronoi_graph.n_inner:,}")
-print(f"    Total edges: {inter_voronoi_graph.m:,}")
-nodes_gdf, edges_gdf = inter_voronoi_graph.to_gdf()
-nodes_gdf.to_file(PATH_SAVE /  f"inter_vor_n_{ENT}.gpkg", driver = "GPKG")
-edges_gdf.to_file(PATH_SAVE /  f"inter_vor_e_{ENT}.gpkg", driver = "GPKG")
+edges_gdf = gpd.GeoDataFrame(
+    edges_df,
+    geometry=lines,
+    crs=centroids.crs,
+)
 
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(25, 25))
+
+edges_gdf.plot(ax=ax, linewidth=0.4, color="gray", alpha=0.6)
+nodes_gdf.plot(ax=ax, markersize=4, color="red")
+
+ax.set_axis_off()
