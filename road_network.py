@@ -644,6 +644,7 @@ class Road_Network:
             self.__external_city_id,
             self.__length_attr
             )
+        city_network["crs"] = self.__crs
         return city_network
     
     def plot_shortest_path(self, source, target, title=None):
@@ -811,7 +812,7 @@ class Road_Network:
         if self.__crs is not None:
             self.__ig_graph["crs"] = self.__crs
     
-        self.__node_to_ig = None    
+        self.node_to_ig   
 
     def __set_ig_graph(self, graph):
         """
@@ -831,10 +832,7 @@ class Road_Network:
             ig_graph=self.__ig_graph,
         )
     
-        self.__external_nodes = None
-        self.__region_nodes = None
-        self.__boundary_nodes = None
-        self.__inner_nodes = None
+        self.__invalidate_graph_caches(self)
     
         self.__compute_node_classifications()
     
@@ -844,3 +842,5 @@ class Road_Network:
             node_id in boundary_nodes
             for node_id in self.__ig_graph.vs["node_id"]
         ]        
+        
+        self.node_to_ig
