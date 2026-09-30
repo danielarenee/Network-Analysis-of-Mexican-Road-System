@@ -53,6 +53,7 @@ print(f"    Density: {city_network.density:.5f}")
 
 
 # Draw city_network
-city_network.plot((25, 25))
-city_network.plot((25, 25), False)
+#city_network.plot((25, 25))
+#city_network.plot((25, 25), False)
 
+city_network.save(PATH, f"national_city_network", True)
