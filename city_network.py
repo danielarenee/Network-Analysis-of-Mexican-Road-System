@@ -38,6 +38,15 @@ class City_Network:
     @property
     def edge_connectivity(self):
         return self.__ig_graph.edge_connectivity()
+    
+    @property
+    def mean_degree(self):
+        degrees = self.__ig_graph.degree()
+        return sum(degrees) / len(degrees)
+    
+    @property
+    def density(self):
+        return self.__ig_graph.density()
 
     # ------------------------------------------------------
     # CONSTRUCTOR
@@ -57,7 +66,7 @@ class City_Network:
     
     # ------------------------------------------------------
     # PUBLIC METHODS
-    # ------------------------------------------------------
+    # ------------------------------------------------------   
     def plot(
             self,
             figsize = (10, 10),
@@ -86,7 +95,7 @@ class City_Network:
         ax.set_axis_off()
         plt.show()
         
-    def save(self, path, file_name):   
+    def save(self, path, file_name, gdf = False):   
         """Save the city network and the associated GeoDataFrames."""
         
         graph_file = Path(path) / f"{file_name}.pkl"
@@ -98,9 +107,10 @@ class City_Network:
                handle,
                protocol=pickle.HIGHEST_PROTOCOL
            )
-          
-        self.__nodes_gdf.to_file(nodes_file, driver="GPKG")
-        self.__edges_gdf.to_file(edges_file, driver="GPKG")
+        
+        if gdf:
+            self.__nodes_gdf.to_file(nodes_file, driver="GPKG")
+            self.__edges_gdf.to_file(edges_file, driver="GPKG")
     
     # ------------------------------------------------------
     # PRIVATE METHODS

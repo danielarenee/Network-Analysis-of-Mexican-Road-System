@@ -186,6 +186,7 @@ def build_region_graph(
     city_network.add_vertices(len(region_map))
     city_network.vs["region"] = list(region_map.keys())
     
+    start = t()
     for i in tqdm(boundary_nodes.keys()):
         D, T = multi_source_region_dijkstra(
                 g = g,
@@ -198,10 +199,11 @@ def build_region_graph(
                 )
         for j, d in D.items():
             city_network.add_edge(region_map[i], region_map[j], length=d, t = T[j])
+    final_time = t()-start
     
     city_network.simplify(combine_edges="first")
     
-    return city_network
+    return city_network, final_time
             
         
 

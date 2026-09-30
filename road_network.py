@@ -1,6 +1,8 @@
 import heapq
 import pickle
 import warnings
+import networkx as nx
+import pandas as pd
 
 from pathlib import Path
 from copy import copy
@@ -96,6 +98,15 @@ class Road_Network:
             }
         return self.__node_to_ig
     
+    @property
+    def mean_degree(self):
+        degrees = self.__ig_graph.degree()
+        return sum(degrees) / len(degrees)
+    
+    @property
+    def density(self):
+        return self.__ig_graph.density()
+    
     # ------------------------------------------------------
     # CONSTRUCTOR
     # ------------------------------------------------------
@@ -168,9 +179,53 @@ class Road_Network:
     # CLASS METHODS
     # ------------------------------------------------------
     @classmethod
+    def union(cls, net1, net2):
+        
+        if not isinstance(net1, cls) or not isinstance(net2, cls):
+            raise TypeError("Both arguments must be instances of the Road_Network class")
+    
+        config_net1 = (
+            net1.__source,
+            net1.__crs,
+            net1.__id_city_label,
+            net1.__external_city_id,
+            net1.__length_attr
+        )
+        config_net2 = (
+            net2.__source,
+            net2.__crs,
+            net2.__id_city_label,
+            net2.__external_city_id,
+            net2.__length_attr,
+        )
+        if config_net1 != config_net2:
+            raise ValueError("Both networks must have the same configuration")
+            
+        graph = nx.compose(net1.__nx_graph, net2.__nx_graph)
+
+        new = cls.__new__(cls)
+        new.__source = net1.__source
+        new.__crs = net1.__crs
+        new.__id_city_label = net1.__id_city_label
+        new.__external_city_id = net1.__external_city_id
+        new.__length_attr = net1.__length_attr
+        new.__gdf_localities = None
+        
+        new.__region_map = net1.__region_map | net2.__region_map
+        new_gdf = [net1.__gdf_nodes_labeled, net2.__gdf_nodes_labeled]
+        new.__gdf_nodes_labeled = pd.concat(new_gdf, ignore_index=True)
+        
+        new.__invalidate_graph_caches()
+        # Rebuild synchronized graph representations and classifications
+        new.__set_nx_graph(graph)
+              
+        
+        return new
+    
+    @classmethod
     def load(cls, path, file):
         
-        graph_file = Path(path) / file
+        graph_file = Path(path) / f"{file}.pkl"
         metadata_file = graph_file.with_suffix(".meta.pkl")
         
         # Load metadata
@@ -216,10 +271,10 @@ class Road_Network:
     # ------------------------------------------------------
     # PUBLIC METHODS
     # ------------------------------------------------------
-    def save(self, path, file):   
+    def save(self, path, file_name, gdf = False):   
         """Save the road network and the metadata required to rebuild it."""
         
-        graph_file = Path(path) / file
+        graph_file = Path(path) / f"{file_name}.pkl"
         metadata_file = graph_file.with_suffix(".meta.pkl")
         
         metadata = {
@@ -242,6 +297,13 @@ class Road_Network:
                handle,
                protocol=pickle.HIGHEST_PROTOCOL
            )
+        
+        if gdf:
+            nodes_gdf, edges_gdf  = self.to_gdf()
+            nodes_file = Path(path) / f"{file_name}_n.gpkg"
+            edges_file = Path(path) / f"{file_name}_e.gpkg"
+            nodes_gdf.to_file(nodes_file, driver="GPKG")
+            edges_gdf.to_file(edges_file, driver="GPKG")
 
     
     def simplify(self, protect_boundary_nodes = True, n_workers = 1):
@@ -636,7 +698,7 @@ class Road_Network:
 
     def build_region_graph(self):   
         
-        city_network = build_region_graph(
+        city_network, final_time = build_region_graph(
             self.__ig_graph,
             self.__node_to_ig,
             self.__boundary_nodes,
@@ -645,7 +707,7 @@ class Road_Network:
             self.__length_attr
             )
         city_network["crs"] = self.__crs
-        return city_network
+        return city_network, final_time
     
     def plot_shortest_path(self, source, target, title=None):
         """
@@ -832,7 +894,7 @@ class Road_Network:
             ig_graph=self.__ig_graph,
         )
     
-        self.__invalidate_graph_caches(self)
+        self.__invalidate_graph_caches()
     
         self.__compute_node_classifications()
     
