@@ -43,4 +43,4 @@ These are research scripts rather than a packaged command-line tool, and a fresh
 2. For the national workflow, obtain the full INEGI RNC 2025 GeoPackage and place it where the scripts expect it. Then prepare the road and junction layers before building the graph. The checked-in `road_network/test/` files are prepared inputs, not the full source GeoPackage.
 3. For the Tabasco workflow, update `SHAPEFILE_PATH` in `redes_viales/main.py` to point to the included `redes_viales/Data/shp/27l.shp`, then run `python redes_viales/main.py`. An internet connection is needed for the OSMnx network request.
 
-Several scripts contain machine-specific paths or Windows-style path construction. Adjust those paths locally before running the national pipeline as well. No code or data files were changed as part of this README update.
+Several scripts contain machine-specific paths or Windows-style path construction. Adjust those paths locally before running the national pipeline as well.
